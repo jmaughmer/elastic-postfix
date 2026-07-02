@@ -11,6 +11,15 @@ PUT _ingest/pipeline/logs-postfix@custom
 <paste contents of postfix_elastic_pipeline.json>
 ```
 
+## Install Mapping Template
+
+Apply the mapping template in Kibana Dev Tools:
+
+```http
+PUT _component_template/logs-postfix@custom
+<paste contents of postfix_component_template.json>
+```
+
 ## Validate with _simulate
 
 Run a quick simulation with representative messages before rollout:
@@ -41,14 +50,14 @@ POST _ingest/pipeline/logs-postfix@custom/_simulate
 		},
 		{
 			"_source": {
-				"message": "Jun 25 12:36:00 mail01 postfix/bounce[56789]: ABCD1234567890: sender non-delivery notification: 0987FEDCBA"
+				"message": "Jun 25 12:36:00 mail01 postfix/qmgr[23456]: ABCD1234567890: from=<>, size=2345, nrcpt=1 (queue active)"
 			}
 		}
 	]
 }
 ```
 
-The bounce document above has a null envelope sender (`from=<>`). Verify that the result contains `postfix.null_sender: true` and no `email.from.address` field.
+The last document uses a null envelope sender (`from=<>`), as produced by bounces and DSNs. Verify that the result contains `postfix.null_sender: true` and no `email.from.address` field.
 
 ## Notes
 
@@ -57,3 +66,4 @@ The bounce document above has a null envelope sender (`from=<>`). Verify that th
 - Syslog timestamps are parsed as UTC unless the `@timestamp` field is already set upstream by the shipper.
 - Empty envelope senders (common in bounces and DSNs) are handled by setting `postfix.null_sender: true` and omitting `email.from.address`, rather than substituting a placeholder address.
 - `postfix_elastic_pipeline.json` uses Kibana Console triple-quote string syntax. It must be pasted directly into Kibana Dev Tools; it is **not** a standalone JSON file that can be loaded by the Elasticsearch REST API or other tooling without first converting the triple-quoted strings to standard JSON escaped strings.
+- `postfix_component_template.json` is standard JSON and can be applied with any Elasticsearch client in addition to Kibana Dev Tools. Apply it before indexing so explicit mappings are used rather than dynamic field inference.

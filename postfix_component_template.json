@@ -1,0 +1,241 @@
+{
+  "_meta": {
+    "description": "Explicit mappings for every field emitted by the logs-postfix@custom ingest pipeline"
+  },
+  "template": {
+    "settings": {
+      "index": {
+        "mapping": {
+          "total_fields": {
+            "limit": 2000
+          }
+        }
+      }
+    },
+    "mappings": {
+      "properties": {
+        "postfix": {
+          "properties": {
+            "action": { "type": "keyword" },
+            "anvil_cache_size": { "type": "long" },
+            "anvil_conn_count": { "type": "long" },
+            "anvil_conn_period": { "type": "keyword" },
+            "anvil_conn_rate": { "type": "long" },
+            "anvil_timestamp": { "type": "keyword" },
+            "bounce_queueid": { "type": "keyword" },
+            "bounce_reason": { "type": "keyword" },
+            "bounce_recipient": { "type": "keyword" },
+            "cleanup_action": { "type": "keyword" },
+            "client_ip_unknown": { "type": "keyword" },
+            "cmd_auth": { "type": "long" },
+            "cmd_auth_accepted": { "type": "long" },
+            "cmd_bdat": { "type": "long" },
+            "cmd_bdat_accepted": { "type": "long" },
+            "cmd_count": { "type": "long" },
+            "cmd_count_accepted": { "type": "long" },
+            "cmd_data": { "type": "long" },
+            "cmd_data_accepted": { "type": "long" },
+            "cmd_ehlo": { "type": "long" },
+            "cmd_ehlo_accepted": { "type": "long" },
+            "cmd_helo": { "type": "long" },
+            "cmd_helo_accepted": { "type": "long" },
+            "cmd_mail": { "type": "long" },
+            "cmd_mail_accepted": { "type": "long" },
+            "cmd_noop": { "type": "long" },
+            "cmd_noop_accepted": { "type": "long" },
+            "cmd_quit": { "type": "long" },
+            "cmd_quit_accepted": { "type": "long" },
+            "cmd_rcpt": { "type": "long" },
+            "cmd_rcpt_accepted": { "type": "long" },
+            "cmd_rset": { "type": "long" },
+            "cmd_rset_accepted": { "type": "long" },
+            "cmd_starttls": { "type": "long" },
+            "cmd_starttls_accepted": { "type": "long" },
+            "cmd_unknown": { "type": "long" },
+            "cmd_unknown_accepted": { "type": "long" },
+            "config_path": { "type": "keyword" },
+            "conn_use": { "type": "long" },
+            "delay": { "type": "double" },
+            "delay_before_qmgr": { "type": "double" },
+            "delay_conn_setup": { "type": "double" },
+            "delay_in_qmgr": { "type": "double" },
+            "delay_transmission": { "type": "double" },
+            "dnsbl_domain": { "type": "keyword" },
+            "dnsbl_result": { "type": "ip" },
+            "dsn": { "type": "keyword" },
+            "ehlo_discard": { "type": "keyword" },
+            "error_response": { "type": "keyword" },
+            "from_domain": { "type": "keyword" },
+            "from_user": { "type": "keyword" },
+            "helo": { "type": "keyword" },
+            "improper_pipelining_data": { "type": "keyword" },
+            "local_response": { "type": "keyword" },
+            "message": { "type": "match_only_text" },
+            "milter_data": { "type": "keyword" },
+            "milter_message": { "type": "keyword" },
+            "milter_result": { "type": "keyword" },
+            "nrcpt": { "type": "long" },
+            "null_sender": { "type": "boolean" },
+            "orig_to": { "type": "keyword" },
+            "pipe_response": { "type": "keyword" },
+            "pix_workaround": { "type": "keyword" },
+            "postscreen_access": { "type": "keyword" },
+            "postscreen_cache_dropped": { "type": "long" },
+            "postscreen_cache_retained": { "type": "long" },
+            "postscreen_data": { "type": "keyword" },
+            "postscreen_dnsbl_rank": { "type": "long" },
+            "postscreen_toobusy_data": { "type": "keyword" },
+            "postscreen_violation": { "type": "keyword" },
+            "postscreen_violation_time": { "type": "double" },
+            "postsuper_action": { "type": "keyword" },
+            "postsuper_summary_action": { "type": "keyword" },
+            "postsuper_summary_count": { "type": "long" },
+            "prepend_trigger": { "type": "keyword" },
+            "prepend_type": { "type": "keyword" },
+            "prepend_value": { "type": "keyword" },
+            "proto": { "type": "keyword" },
+            "proxy_message": { "type": "keyword" },
+            "proxy_result": { "type": "keyword" },
+            "proxy_smtp_stage": { "type": "keyword" },
+            "proxy_status_code": { "type": "long" },
+            "proxy_status_code_enhanced": { "type": "keyword" },
+            "relay_service": { "type": "keyword" },
+            "resent-message-id": { "type": "keyword" },
+            "sasl_method": { "type": "keyword" },
+            "sasl_reason": { "type": "keyword" },
+            "sasl_sender": { "type": "keyword" },
+            "sasl_username": { "type": "keyword" },
+            "scache_addresses": { "type": "long" },
+            "scache_connection": { "type": "long" },
+            "scache_domains": { "type": "long" },
+            "scache_hits": { "type": "long" },
+            "scache_miss": { "type": "long" },
+            "scache_success": { "type": "long" },
+            "scache_timestamp": { "type": "keyword" },
+            "script_action": { "type": "keyword" },
+            "service": { "type": "keyword" },
+            "size": { "type": "long" },
+            "smtp_lostconn_data": { "type": "keyword" },
+            "smtp_lostconn_reason": { "type": "keyword" },
+            "smtp_response": { "type": "keyword" },
+            "smtp_stage": { "type": "keyword" },
+            "smtpd_lostconn_data": { "type": "keyword" },
+            "smtpd_lostconn_reason": { "type": "keyword" },
+            "status": { "type": "keyword" },
+            "status_code": { "type": "long" },
+            "status_code_enhanced": { "type": "keyword" },
+            "status_data": { "type": "keyword" },
+            "status_message": { "type": "keyword" },
+            "table": { "type": "keyword" },
+            "termination_signal": { "type": "long" },
+            "tls_cipher_size": { "type": "long" },
+            "tls_error": { "type": "keyword" },
+            "tls_key_exchange": { "type": "keyword" },
+            "tls_server_digest": { "type": "keyword" },
+            "tls_server_signature": { "type": "keyword" },
+            "tls_server_signature_curve": { "type": "keyword" },
+            "tls_server_signature_size": { "type": "long" },
+            "tls_trustlevel": { "type": "keyword" },
+            "to_domain": { "type": "keyword" },
+            "to_user": { "type": "keyword" },
+            "uid": { "type": "keyword" },
+            "verify_cache_dropped": { "type": "long" },
+            "verify_cache_retained": { "type": "long" },
+            "verify_cleanup_type": { "type": "keyword" },
+            "version": { "type": "keyword" }
+          }
+        },
+        "opendkim": {
+          "properties": {
+            "args": { "type": "keyword" },
+            "client_hostname": { "type": "keyword" },
+            "client_ip": { "type": "ip" },
+            "domain": { "type": "keyword" },
+            "key_error": { "type": "keyword" },
+            "lifecycle_message": { "type": "keyword" },
+            "parse_fail_header": { "type": "keyword" },
+            "selector": { "type": "keyword" },
+            "sender": { "type": "keyword" },
+            "signature": { "type": "keyword" },
+            "signature_existing": { "type": "keyword" },
+            "verification": { "type": "keyword" },
+            "version": { "type": "keyword" }
+          }
+        },
+        "source": {
+          "properties": {
+            "ip": { "type": "ip" },
+            "domain": { "type": "keyword" },
+            "port": { "type": "long" },
+            "geo": {
+              "properties": {
+                "city_name": { "type": "keyword" },
+                "continent_name": { "type": "keyword" },
+                "country_iso_code": { "type": "keyword" },
+                "country_name": { "type": "keyword" },
+                "region_iso_code": { "type": "keyword" },
+                "region_name": { "type": "keyword" },
+                "location": { "type": "geo_point" }
+              }
+            }
+          }
+        },
+        "destination": {
+          "properties": {
+            "ip": { "type": "ip" },
+            "domain": { "type": "keyword" },
+            "port": { "type": "long" }
+          }
+        },
+        "email": {
+          "properties": {
+            "from": { "properties": { "address": { "type": "keyword" } } },
+            "to": { "properties": { "address": { "type": "keyword" } } },
+            "message_id": { "type": "keyword" },
+            "local_id": { "type": "keyword" }
+          }
+        },
+        "tls": {
+          "properties": {
+            "version": { "type": "keyword" },
+            "version_protocol": { "type": "keyword" },
+            "cipher": { "type": "keyword" },
+            "established": { "type": "boolean" }
+          }
+        },
+        "log": {
+          "properties": {
+            "level": { "type": "keyword" },
+            "syslog": { "properties": { "hostname": { "type": "keyword" } } }
+          }
+        },
+        "process": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "pid": { "type": "long" }
+          }
+        },
+        "event": {
+          "properties": {
+            "kind": { "type": "keyword" },
+            "category": { "type": "keyword" },
+            "outcome": { "type": "keyword" },
+            "original": { "type": "keyword", "index": false, "doc_values": false }
+          }
+        },
+        "related": {
+          "properties": {
+            "ip": { "type": "ip" }
+          }
+        },
+        "error": {
+          "properties": {
+            "message": { "type": "match_only_text" },
+            "tag": { "type": "keyword" }
+          }
+        },
+        "tags": { "type": "keyword" }
+      }
+    }
+  }
+}
