@@ -1,0 +1,547 @@
+{
+  "processors": [
+    {
+      "set": {
+        "field": "event.original",
+        "copy_from": "message",
+        "override": false,
+        "ignore_empty_value": true
+      }
+    },
+    {
+      "grok": {
+        "ignore_missing": true,
+        "field": "message",
+        "tag": "grok_syslog",
+        "patterns": [
+          """%{SYSLOGTIMESTAMP:_tmp_timestamp} %{SYSLOGHOST:log.syslog.hostname} %{PROG:program}(?:\[%{POSINT:process.pid:long}\])?: %{GREEDYDATA:message}"""
+        ],
+        "on_failure": [
+          {
+            "append": {
+              "field": "tags",
+              "value": ["_grok_syslog_nomatch"],
+              "allow_duplicates": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "date": {
+        "if": "ctx._tmp_timestamp != null",
+        "field": "_tmp_timestamp",
+        "formats": [
+          "MMM dd HH:mm:ss",
+          "MMM  d HH:mm:ss",
+          "MMM d HH:mm:ss"
+        ],
+        "on_failure": [
+          {
+            "append": {
+              "field": "tags",
+              "value": ["_date_parse_failure"],
+              "allow_duplicates": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "remove": {
+        "field": "_tmp_timestamp",
+        "ignore_missing": true
+      }
+    },
+    {
+      "grok": {
+        "field": "message",
+        "patterns": [
+          "^%{POSTFIX_CLEANUP_PREPEND}$",
+          "^%{POSTFIX_QMGR}$",
+          "^%{POSTFIX_SMTP}$",
+          "^%{POSTFIX_SMTPD}$",
+          "^%{POSTFIX_CLEANUP}$",
+          "^%{POSTFIX_LOCAL}$",
+          "^%{POSTFIX_LMTP}$",
+          "^%{POSTFIX_VIRTUAL}$",
+          "^%{POSTFIX_PIPE}$",
+          "^%{POSTFIX_PICKUP}$",
+          "^%{POSTFIX_BOUNCE}$",
+          "^%{POSTFIX_POSTSCREEN}$",
+          "^%{POSTFIX_DNSBLOG}$",
+          "^%{POSTFIX_TLSPROXY}$",
+          "^%{POSTFIX_ANVIL}$",
+          "^%{POSTFIX_SCACHE}$",
+          "^%{POSTFIX_MASTER}$",
+          "^%{POSTFIX_TABLE_CHANGE}$",
+          "^%{POSTFIX_ERROR}$",
+          "^%{POSTFIX_TRIVIAL_REWRITE}$",
+          "^%{POSTFIX_TLSMGR}$",
+          "^%{POSTFIX_POSTDROP}$",
+          "^%{POSTFIX_SENDMAIL}$",
+          "^%{POSTFIX_POSTMAP}$",
+          "^%{POSTFIX_SCRIPT}$",
+          "^%{POSTFIX_DISCARD}$",
+          "^%{POSTFIX_POSTSUPER}$",
+          "^%{POSTFIX_VERIFY}$"
+        ],
+        "ignore_missing": true,
+        "description": "Postfix Grok",
+        "tag": "grok_postfix",
+        "pattern_definitions": {
+          "POSTFIX_SMTPD_NOQUEUE": "%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_ACTION:postfix_action}: %{POSTFIX_SMTP_STAGE:postfix_smtp_stage} from %{POSTFIX_CLIENT}:( %{POSTFIX_STATUS_CODE:postfix_status_code:int} %{POSTFIX_STATUS_CODE_ENHANCED:postfix_status_code_enhanced})?( <%{DATA:postfix_status_data}>:)? (%{POSTFIX_DNSBL_MESSAGE}|%{GREEDYDATA:postfix_status_message};) %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}",
+          "POSTFIX_TRIVIAL_REWRITE": "%{POSTFIX_WARNING}",
+          "POSTFIX_DNSBLOG": "%{POSTFIX_DNSBLOG_LISTING}|%{POSTFIX_WARNING}",
+          "POSTFIX_SMTPD_CONNECT": "connect from %{POSTFIX_CLIENT}",
+          "POSTFIX_SMTP_PIX": "%{POSTFIX_QUEUEID:postfix_queueid}: enabling PIX workarounds: %{DATA:postfix_pix_workaround} for %{POSTFIX_RELAY}",
+          "POSTFIX_WARNING_WITH_KV": "(%{POSTFIX_QUEUEID:postfix_queueid}: )?(?<postfix_message_level>(error|warning|fatal|info)): (%{POSTFIX_QUEUEID:postfix_queueid}: )?(%{POSTFIX_CLIENT}: )?%{GREEDYDATA:postfix_message}; %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}",
+          "POSTFIX_LOSTCONN_REASONS": "(receiving the initial server greeting|sending message body|sending end of data -- message may be sent more than once|sending %{POSTFIX_SMTP_STAGE:postfix_smtp_stage})",
+          "POSTFIX_ANVIL_CONN_CACHE": "statistics: max cache size %{NUMBER:postfix_anvil_cache_size:int} at %{SYSLOGTIMESTAMP:postfix_anvil_timestamp}",
+          "POSTFIX_TLSPROXY_CONN": "(DIS)?CONNECT( from)? %{POSTFIX_CLIENT}",
+          "POSTFIX_POSTSUPER_ACTIONS": "(removed|requeued|placed on hold|released from hold)",
+          "POSTFIX_ANVIL_CONN_RATE": """statistics: max connection rate %{NUMBER:postfix_anvil_conn_rate:int}/(?<postfix_anvil_conn_period>\d+[smhd]) for \(%{DATA:postfix_service}:(%{IP_UNKNOWN:postfix_client_ip_unknown}|%{IP:postfix_client_ip})\) at %{SYSLOGTIMESTAMP:postfix_anvil_timestamp}""",
+          "POSTFIX_POSTSUPER_SUMMARY": "%{POSTFIX_POSTSUPER_SUMMARY_ACTIONS:postfix_postsuper_summary_action}: %{NUMBER:postfix_postsuper_summary_count:int} messages?",
+          "POSTFIX_TLSMGR": "%{POSTFIX_WARNING}",
+          "POSTFIX_TABLE_CHANGE": "table %{DATA:postfix_table} has changed -- restarting",
+          "POSTFIX_SMTP_RELAYERR": """%{POSTFIX_QUEUEID:postfix_queueid}: host %{POSTFIX_RELAY} said: %{GREEDYDATA:postfix_smtp_response} \(in reply to %{POSTFIX_SMTP_STAGE:postfix_smtp_stage} command\)""",
+          "POSTFIX_LOSTCONN": "(Connection timed out|No route to host|Connection refused|Network is unreachable|lost connection|timeout|SSL_accept error|-1|Address not available|Operation timed out|bare <LF> received)",
+          "POSTFIX_SMTP": "%{POSTFIX_SMTP_DELIVERY}|%{POSTFIX_TLSCONN}|%{POSTFIX_SMTP_CONNERR}|%{POSTFIX_SMTP_SSLCONNERR}|%{POSTFIX_SMTP_SSLAUTHERR}|%{POSTFIX_SMTP_LOSTCONN}|%{POSTFIX_SMTP_TIMEOUT}|%{POSTFIX_SMTP_RELAYERR}|%{POSTFIX_SMTP_RELAYREFUSED}|%{POSTFIX_SMTP_TLSERR}|%{POSTFIX_WARNING}|%{POSTFIX_SMTP_UTF8}|%{POSTFIX_TLSVERIFICATION}|%{POSTFIX_SMTP_PIX}",
+          "POSTFIX_SMTP_TLSERR": "%{POSTFIX_QUEUEID:postfix_queueid}: Cannot start TLS: %{GREEDYDATA:postfix_tls_error}",
+          "POSTFIX_DISCARD_ANY": "%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data} status=%{STATUS_WORD:postfix_status} %{GREEDYDATA}",
+          "POSTFIX_PS_DNSBL": "%{POSTFIX_PS_VIOLATION:postfix_postscreen_violation} rank %{INT:postfix_postscreen_dnsbl_rank:int} for %{POSTFIX_CLIENT}",
+          "POSTFIX_VERIFY": "%{POSTFIX_VERIFY_CACHE}",
+          "POSTFIX_POSTSUPER_ACTION": "%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_POSTSUPER_ACTIONS:postfix_postsuper_action}",
+          "POSTFIX_SMTPD_DISCARD": "discarding EHLO keywords: %{GREEDYDATA:postfix_ehlo_discard}",
+          "POSTFIX_SMTP_CONNERR": "connect to %{POSTFIX_RELAY}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data}",
+          "POSTFIX_CLEANUP_PREPEND_TYPE": "(header|body)",
+          "POSTFIX_KEYVALUE_DATA": """[\w-]+=[^;]*""",
+          "POSTFIX_PS_NOQUEUE": "%{POSTFIX_SMTPD_NOQUEUE}",
+          "POSTFIX_BOUNCE": "%{POSTFIX_BOUNCE_NOTIFICATION}",
+          "POSTFIX_SENDMAIL": "%{POSTFIX_WARNING}",
+          "POSTFIX_KEYVALUE": "%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}",
+          "POSTFIX_PIPE_ANY": """%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}, status=%{STATUS_WORD:postfix_status} \(%{GREEDYDATA:postfix_pipe_response}\)""",
+          "POSTFIX_MASTER_START": "(daemon started|reload) -- version %{DATA:postfix_version}, configuration %{PATH:postfix_config_path}",
+          "POSTFIX_BOUNCE_NOTIFICATION": "%{POSTFIX_QUEUEID:postfix_queueid}: (?<postfix_bounce_recipient>(sender|postmaster)) (?<postfix_bounce_reason>(non-delivery|delivery status|delay)) notification: %{POSTFIX_QUEUEID:postfix_bounce_queueid}",
+          "POSTFIX_PIPE": "%{POSTFIX_PIPE_ANY}",
+          "POSTFIX_QMGR_MESSAGE": "(removed|skipped, still being delivered)",
+          "POSTFIX_SCACHE_LOOKUPS": "statistics: (address|domain) lookup hits=%{INT:postfix_scache_hits:int} miss=%{INT:postfix_scache_miss:int} success=%{INT:postfix_scache_success:int}%",
+          "POSTFIX_POSTSUPER_SUMMARY_ACTIONS": "(Deleted|Requeued|Placed on hold|Released from hold)",
+          "POSTFIX_SMTP_SSLAUTHERR": "%{POSTFIX_QUEUEID:postfix_queueid}: SASL authentication failed; server %{POSTFIX_RELAY} said: %{GREEDYDATA:postfix_smtp_response}",
+          "POSTFIX_POSTDROP": "%{POSTFIX_WARNING}",
+          "POSTFIX_DISCARD": "%{POSTFIX_DISCARD_ANY}|%{POSTFIX_WARNING}",
+          "POSTFIX_SCACHE": "%{POSTFIX_SCACHE_LOOKUPS}|%{POSTFIX_SCACHE_SIMULTANEOUS}|%{POSTFIX_SCACHE_TIMESTAMP}",
+          "POSTFIX_ERROR": "%{POSTFIX_ERROR_ANY}",
+          "POSTFIX_PS_ACCESS": "%{POSTFIX_PS_ACCESS_ACTION:postfix_postscreen_access} %{POSTFIX_CLIENT}",
+          "POSTFIX_PS_CACHE": "cache %{DATA} full cleanup: retained=%{NUMBER:postfix_postscreen_cache_retained:int} dropped=%{NUMBER:postfix_postscreen_cache_dropped:int} entries",
+          "POSTFIX_POSTMAP": "%{POSTFIX_WARNING}",
+          "POSTFIX_LOCAL": "%{POSTFIX_LOCAL_DELIVERY}|%{POSTFIX_WARNING}",
+          "POSTFIX_POSTSCREEN": "%{POSTFIX_PS_CONNECT}|%{POSTFIX_PS_ACCESS}|%{POSTFIX_PS_NOQUEUE}|%{POSTFIX_PS_TOOBUSY}|%{POSTFIX_PS_CACHE}|%{POSTFIX_PS_DNSBL}|%{POSTFIX_PS_VIOLATIONS}|%{POSTFIX_WARNING}",
+          "POSTFIX_PS_VIOLATION": "(BARE NEWLINE|COMMAND (TIME|COUNT|LENGTH) LIMIT|COMMAND PIPELINING|DNSBL|HANGUP|NON-SMTP COMMAND|PREGREET)",
+          "POSTFIX_SMTP_RELAYREFUSED": "%{POSTFIX_QUEUEID:postfix_queueid}: host %{POSTFIX_RELAY} refused to talk to me: %{GREEDYDATA:postfix_smtp_response}",
+          "POSTFIX_STATUS_CODE": """\d{3}""",
+          "POSTFIX_DNSBL_MESSAGE": """Service unavailable; .* \[%{GREEDYDATA:postfix_status_data}\] %{GREEDYDATA:postfix_status_message};""",
+          "POSTFIX_DNSBLOG_LISTING": "addr %{IP:postfix_client_ip} listed by domain %{HOSTNAME:postfix_dnsbl_domain} as %{IP:postfix_dnsbl_result}",
+          "POSTFIX_SMTP_TIMEOUT": "%{POSTFIX_QUEUEID:postfix_queueid}: conversation with %{POSTFIX_RELAY} timed out( while %{POSTFIX_LOSTCONN_REASONS:postfix_smtp_lostconn_reason})?",
+          "POSTFIX_QMGR_EXPIRED": "%{POSTFIX_QUEUEID:postfix_queueid}: from=<%{DATA:postfix_from}>, status=%{STATUS_WORD:postfix_status}, returned to sender",
+          "POSTFIX_SMTPD_LOSTCONN": """%{POSTFIX_LOSTCONN:postfix_smtpd_lostconn_data}( after %{POSTFIX_SMTP_STAGE:postfix_smtp_stage}( \(%{INT} bytes\))?)? from %{POSTFIX_CLIENT}(: %{GREEDYDATA:postfix_smtpd_lostconn_reason})?""",
+          "POSTFIX_SMTP_SSLCONNERR": "SSL_connect error to %{POSTFIX_RELAY}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data}",
+          "POSTFIX_CLEANUP_PREPEND": "%{POSTFIX_QUEUEID:postfix_queueid}: (?<postfix_cleanup_action>(prepend|replace|filter|discard|redirect|warning|info)): %{POSTFIX_CLEANUP_PREPEND_TYPE:postfix_prepend_type} %{GREEDYDATA:postfix_prepend_trigger} from %{POSTFIX_CLIENT}; %{GREEDYDATA_NO_COLON:postfix_keyvalue_data}(: %{GREEDYDATA:postfix_prepend_value})?",
+          "POSTFIX_LMTP": "%{POSTFIX_SMTP}",
+          "POSTFIX_QMGR_ACTIVE": """%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data} \(queue active\)""",
+          "POSTFIX_MASTER": "%{POSTFIX_MASTER_START}|%{POSTFIX_MASTER_EXIT}|%{POSTFIX_WARNING}",
+          "POSTFIX_CLIENT": """%{HOSTNAME:postfix_client_hostname}?\[(%{IP_UNKNOWN:postfix_client_ip_unknown}|%{IP:postfix_client_ip})\](:%{INT:postfix_client_port:int})?""",
+          "POSTFIX_SMTPD_DISCONNECT": "disconnect from %{POSTFIX_CLIENT}( %{DATA:postfix_command_counter_data})?$",
+          "GREEDYDATA_NO_COLON": "[^:]*",
+          "POSTFIX_CLEANUP_MILTER": "%{POSTFIX_QUEUEID:postfix_queueid}: milter-%{POSTFIX_ACTION:postfix_milter_result}: %{GREEDYDATA:postfix_milter_message}; %{GREEDYDATA_NO_COLON:postfix_keyvalue_data}(: %{GREEDYDATA:postfix_milter_data})?",
+          "POSTFIX_CLEANUP_MESSAGEID": "%{POSTFIX_QUEUEID:postfix_queueid}: message-id=<?%{GREEDYDATA_NO_BRACKET:postfix_message-id}>?",
+          "POSTFIX_SMTP_STAGE": """(CONNECT|HELO|EHLO|STARTTLS|AUTH|MAIL( FROM)?|RCPT( TO)?|(end of )?DATA|BDAT|RSET|UNKNOWN|END-OF-MESSAGE|VRFY|\.)""",
+          "POSTFIX_SMTPD_PIPELINING": "improper command pipelining after %{POSTFIX_SMTP_STAGE:postfix_smtp_stage} from %{POSTFIX_CLIENT}: %{GREEDYDATA:postfix_improper_pipelining_data}",
+          "POSTFIX_LOCAL_DELIVERY": """%{POSTFIX_KEYVALUE} status=%{STATUS_WORD:postfix_status}( \(%{GREEDYDATA:postfix_local_response}\))?""",
+          "POSTFIX_SMTP_LOSTCONN": "%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_LOSTCONN:postfix_smtp_lostconn_data} with %{POSTFIX_RELAY}( while %{POSTFIX_LOSTCONN_REASONS:postfix_smtp_lostconn_reason})?",
+          "POSTFIX_QMGR_INFO": "%{POSTFIX_QUEUEID:postfix_queueid}: %{POSTFIX_QMGR_MESSAGE:postfix_message}",
+          "POSTFIX_SMTPD": "%{POSTFIX_SMTPD_CONNECT}|%{POSTFIX_SMTPD_DISCONNECT}|%{POSTFIX_SMTPD_NOQUEUE}|%{POSTFIX_TLSCONN}|%{POSTFIX_SMTPD_LOSTCONN}|%{POSTFIX_SMTPD_TOOMANYERR}|%{POSTFIX_SMTPD_PIPELINING}|%{POSTFIX_SMTPD_DISCARD}|%{POSTFIX_WARNING}|%{POSTFIX_SMTPD_PROXY}|%{POSTFIX_KEYVALUE}",
+          "POSTFIX_SMTPD_TOOMANYERR": "too many errors after %{POSTFIX_SMTP_STAGE:postfix_smtp_stage} from %{POSTFIX_CLIENT}",
+          "POSTFIX_VERIFY_CACHE": "cache %{DATA} (?<postfix_verify_cleanup_type>(full|partial)) cleanup: retained=%{INT:postfix_verify_cache_retained:int} dropped=%{INT:postfix_verify_cache_dropped:int} entries",
+          "POSTFIX_POSTSUPER": "%{POSTFIX_POSTSUPER_ACTION}|%{POSTFIX_POSTSUPER_SUMMARY}",
+          "IP_UNKNOWN": "unknown",
+          "POSTFIX_ERROR_ANY": """(%{POSTFIX_QUEUEID:postfix_queueid}: )?%{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}, status=%{STATUS_WORD:postfix_status} \(%{GREEDYDATA:postfix_error_response}\)""",
+          "POSTFIX_ANVIL": "%{POSTFIX_ANVIL_CONN_RATE}|%{POSTFIX_ANVIL_CONN_CACHE}|%{POSTFIX_ANVIL_CONN_COUNT}",
+          "POSTFIX_CLEANUP": "%{POSTFIX_CLEANUP_MESSAGEID}|%{POSTFIX_CLEANUP_MILTER}|%{POSTFIX_CLEANUP_PREPEND}|%{POSTFIX_WARNING}|%{POSTFIX_KEYVALUE}",
+          "POSTFIX_QMGR": "%{POSTFIX_QMGR_INFO}|%{POSTFIX_QMGR_ACTIVE}|%{POSTFIX_QMGR_EXPIRED}|%{POSTFIX_WARNING}",
+          "POSTFIX_TLSVERIFICATION": "certificate verification failed for %{POSTFIX_RELAY}: %{GREEDYDATA:postfix_tls_error}",
+          "POSTFIX_MASTER_EXIT": "terminating on signal %{INT:postfix_termination_signal:int}",
+          "POSTFIX_WARNING": "%{POSTFIX_SMTPD_SASL_AUTH_FAILED}|%{POSTFIX_WARNING_WITH_KV}|%{POSTFIX_WARNING_WITHOUT_KV}",
+          "POSTFIX_SMTPD_SASL_AUTH_FAILED": "(?<postfix_message_level>warning): %{POSTFIX_CLIENT}: SASL (?<postfix_sasl_method>[A-Za-z0-9-]+) authentication failed(: %{GREEDYDATA:postfix_sasl_reason})?",
+          "POSTFIX_SCACHE_TIMESTAMP": "statistics: start interval %{SYSLOGTIMESTAMP:postfix_scache_timestamp}",
+          "POSTFIX_SCRIPT": "%{POSTFIX_SCRIPT_ACTION}|%{POSTFIX_WARNING}",
+          "POSTFIX_SCRIPT_ACTION": "(?<postfix_script_action>(starting|stopping|refreshing)) the Postfix mail system",
+          "POSTFIX_PS_CONNECT": """CONNECT from %{POSTFIX_CLIENT} to \[%{IP:postfix_server_ip}\]:%{INT:postfix_server_port:int}""",
+          "POSTFIX_SMTP_UTF8": "host %{POSTFIX_RELAY} offers SMTPUTF8 support, but not 8BITMIME",
+          "STATUS_WORD": """[\w-]*""",
+          "POSTFIX_QUEUEID": "([0-9A-F]{6,}|[0-9a-zA-Z]{12,}|NOQUEUE)",
+          "POSTFIX_RELAY": """%{HOSTNAME:postfix_relay_hostname}?\[(%{IP:postfix_relay_ip}|%{DATA:postfix_relay_service})\](:%{INT:postfix_relay_port:int})?|%{WORD:postfix_relay_service}""",
+          "POSTFIX_WARNING_WITHOUT_KV": "(%{POSTFIX_QUEUEID:postfix_queueid}: )?(?<postfix_message_level>(error|warning|fatal|info)): (%{POSTFIX_QUEUEID:postfix_queueid}: )?(%{POSTFIX_CLIENT}: )?%{GREEDYDATA:postfix_message}",
+          "POSTFIX_PROXY_MESSAGE": "(%{POSTFIX_STATUS_CODE:postfix_proxy_status_code} )?(%{POSTFIX_STATUS_CODE_ENHANCED:postfix_proxy_status_code_enhanced})?.*",
+          "POSTFIX_STATUS_CODE_ENHANCED": """\d\.\d+\.\d+""",
+          "POSTFIX_PS_TOOBUSY": "NOQUEUE: reject: CONNECT from %{POSTFIX_CLIENT}: %{GREEDYDATA:postfix_postscreen_toobusy_data}",
+          "POSTFIX_TLSCONN": """%{DATA:postfix_tls_trustlevel} TLS connection established (to %{POSTFIX_RELAY}|from %{POSTFIX_CLIENT}): %{DATA:postfix_tls_version} with cipher %{DATA:postfix_tls_cipher} \(%{INT:postfix_tls_cipher_size:int}(/%{INT})? bits\)( key-exchange %{DATA:postfix_tls_key_exchange} server-signature %{DATA:postfix_tls_server_signature} \((%{INT:postfix_tls_server_signature_size:int} bits|(?<postfix_tls_server_signature_curve>[PBK]-\d+))\) server-digest %{DATA:postfix_tls_server_digest})?""",
+          "POSTFIX_SMTPD_PROXY": "proxy-%{POSTFIX_ACTION:postfix_proxy_result}: (%{POSTFIX_SMTP_STAGE:postfix_proxy_smtp_stage}): %{POSTFIX_PROXY_MESSAGE:postfix_proxy_message}; %{POSTFIX_KEYVALUE_DATA:postfix_keyvalue_data}",
+          "POSTFIX_PICKUP": "%{POSTFIX_KEYVALUE}",
+          "POSTFIX_VIRTUAL": "%{POSTFIX_SMTP_DELIVERY}",
+          "GREEDYDATA_NO_BRACKET": "[^<>]*",
+          "POSTFIX_PS_ACCESS_ACTION": "(DISCONNECT|DENYLISTED|BLACKLISTED|ALLOWLISTED|WHITELISTED|ALLOWLIST VETO|WHITELIST VETO|PASS NEW|PASS OLD)",
+          "POSTFIX_TLSPROXY": "%{POSTFIX_TLSPROXY_CONN}|%{POSTFIX_WARNING}",
+          "POSTFIX_ACTION": "(accept|defer|discard|filter|header-redirect|hold|milter-reject|reject|reject_warning)",
+          "POSTFIX_SMTP_DELIVERY": """%{POSTFIX_KEYVALUE} status=%{STATUS_WORD:postfix_status}( \(%{GREEDYDATA:postfix_smtp_response}\))?""",
+          "POSTFIX_SCACHE_SIMULTANEOUS": "statistics: max simultaneous domains=%{INT:postfix_scache_domains:int} addresses=%{INT:postfix_scache_addresses:int} connection=%{INT:postfix_scache_connection:int}",
+          "POSTFIX_PS_VIOLATIONS": "%{POSTFIX_PS_VIOLATION:postfix_postscreen_violation}( %{INT})?( after %{NUMBER:postfix_postscreen_violation_time:float})? from %{POSTFIX_CLIENT}(( after %{POSTFIX_SMTP_STAGE:postfix_smtp_stage})?(: %{GREEDYDATA:postfix_postscreen_data})?| in tests (after|before) SMTP handshake)",
+          "POSTFIX_ANVIL_CONN_COUNT": """statistics: max connection count %{NUMBER:postfix_anvil_conn_count:int} for \(%{DATA:postfix_service}:(%{IP_UNKNOWN:postfix_client_ip_unknown}|%{IP:postfix_client_ip})\) at %{SYSLOGTIMESTAMP:postfix_anvil_timestamp}"""
+        },
+        "if": "ctx.program != null && ctx.program.startsWith('postfix')",
+        "on_failure": [
+          {
+            "append": {
+              "field": "tags",
+              "value": ["_grok_postfix_nomatch"],
+              "allow_duplicates": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "grok": {
+        "field": "message",
+        "patterns": [
+          "^%{OPENDKIM}$"
+        ],
+        "description": "OpenDKIM Grok",
+        "tag": "grok_opendkim",
+        "pattern_definitions": {
+          "OPENDKIM_SIGNATURE_NOT_INTERNAL": "%{OPENDKIM_CLIENT} not internal",
+          "OPENDKIM_VERIFICATION": "DKIM verification %{DATA:opendkim_verification}",
+          "OPENDKIM": "%{POSTFIX_QUEUEID:postfix_queueid}: (%{OPENDKIM_VERIFICATION}|%{OPENDKIM_PARSE_FAILURE}|%{OPENDKIM_KEY_FAILED}|%{OPENDKIM_NO_TABLE_MATCH}|%{OPENDKIM_SIGNATURE})|%{OPENDKIM_LIFECYCLE}",
+          "OPENDKIM_KEY_FAILED": """key retrieval failed \(s=%{DATA:opendkim_selector}, d=%{DATA:opendkim_domain}\)(: %{GREEDYDATA:opendkim_key_error})?""",
+          "OPENDKIM_NO_TABLE_MATCH": "no signing table match for '%{DATA:opendkim_sender}'",
+          "OPENDKIM_LIFECYCLE": """OpenDKIM Filter( v%{DATA:opendkim_version} starting( \(args: %{GREEDYDATA:opendkim_args}\))?|: %{GREEDYDATA:opendkim_lifecycle_message})""",
+          "OPENDKIM_SIGNATURE_MISSING": "no signature data",
+          "POSTFIX_QUEUEID": "([0-9A-F]{6,}|[0-9a-zA-Z]{12,}|NOQUEUE)",
+          "OPENDKIM_SIGNATURE": "(%{OPENDKIM_SIGNATURE_ADDED}|%{OPENDKIM_SIGNATURE_BAD}|%{OPENDKIM_SIGNATURE_MISSING}|%{OPENDKIM_SIGNATURE_NOT_AUTHENTICATED}|%{OPENDKIM_SIGNATURE_NOT_INTERNAL}|%{OPENDKIM_SIGNATURES})",
+          "OPENDKIM_SIGNATURES": "message has signatures from %{GREEDYDATA:opendkim_signature_existing}",
+          "OPENDKIM_CLIENT": """%{HOSTNAME:opendkim_client_hostname} \[%{IP:opendkim_client_ip}\]""",
+          "OPENDKIM_SIGNATURE_NOT_AUTHENTICATED": "not authenticated",
+          "OPENDKIM_SIGNATURE_ADDED": """DKIM-Signature field added \(%{GREEDYDATA:opendkim_signature}\)""",
+          "OPENDKIM_SIGNATURE_BAD": "bad signature data",
+          "OPENDKIM_PARSE_FAILURE": """can\'t parse From: header value \'%{GREEDYDATA:opendkim_parse_fail_header}\'"""
+        },
+        "if": "ctx?.program == \"opendkim\"",
+        "on_failure": [
+          {
+            "append": {
+              "field": "tags",
+              "value": ["_grok_opendkim_nomatch"],
+              "allow_duplicates": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kv": {
+        "field": "postfix_keyvalue_data",
+        "field_split": " ",
+        "prefix": "postfix_",
+        "trim_value": "<>,",
+        "ignore_missing": true,
+        "value_split": "="
+      }
+    },
+    {
+      "set": {
+        "if": "ctx.postfix_from != null && ctx.postfix_from.isEmpty()",
+        "field": "postfix_null_sender",
+        "value": true
+      }
+    },
+    {
+      "remove": {
+        "if": "ctx.postfix_from != null && ctx.postfix_from.isEmpty()",
+        "field": "postfix_from"
+      }
+    },
+    {
+      "dissect": {
+        "if": "ctx.postfix_from != null && ctx.postfix_from.contains('@')",
+        "pattern": "%{postfix_from_user}@%{postfix_from_domain}",
+        "field": "postfix_from"
+      }
+    },
+    {
+      "dissect": {
+        "if": "ctx.postfix_to != null && ctx.postfix_to.contains('@')",
+        "pattern": "%{postfix_to_user}@%{postfix_to_domain}",
+        "field": "postfix_to"
+      }
+    },
+    {
+      "grok": {
+        "ignore_missing": true,
+        "field": "postfix_client",
+        "pattern_definitions": {
+          "IP_UNKNOWN": "unknown",
+          "POSTFIX_CLIENT": """%{HOSTNAME:postfix_client_hostname}?\[(%{IP_UNKNOWN:postfix_client_ip_unknown}|%{IP:postfix_client_ip})\](:%{INT:postfix_client_port:int})?"""
+        },
+        "patterns": [
+          "^%{POSTFIX_CLIENT}$"
+        ]
+      }
+    },
+    {
+      "grok": {
+        "ignore_missing": true,
+        "field": "postfix_relay",
+        "pattern_definitions": {
+          "POSTFIX_RELAY": """%{HOSTNAME:postfix_relay_hostname}?\[(%{IP:postfix_relay_ip}|%{DATA:postfix_relay_service})\](:%{INT:postfix_relay_port:int})?|%{WORD:postfix_relay_service}"""
+        },
+        "patterns": [
+          "^%{POSTFIX_RELAY}$"
+        ]
+      }
+    },
+    {
+      "grok": {
+        "ignore_missing": true,
+        "field": "postfix_delays",
+        "pattern_definitions": {
+          "POSTFIX_DELAYS": "%{NUMBER:postfix_delay_before_qmgr:float}/%{NUMBER:postfix_delay_in_qmgr:float}/%{NUMBER:postfix_delay_conn_setup:float}/%{NUMBER:postfix_delay_transmission:float}"
+        },
+        "patterns": [
+          "^%{POSTFIX_DELAYS}$"
+        ]
+      }
+    },
+    {
+      "grok": {
+        "ignore_missing": true,
+        "field": "postfix_command_counter_data",
+        "pattern_definitions": {
+          "POSTFIX_COMMAND_COUNTER_DATA": "(helo=(%{INT:postfix_cmd_helo_accepted:int}/)?%{INT:postfix_cmd_helo:int} )?(ehlo=(%{INT:postfix_cmd_ehlo_accepted:int}/)?%{INT:postfix_cmd_ehlo:int} )?(starttls=(%{INT:postfix_cmd_starttls_accepted:int}/)?%{INT:postfix_cmd_starttls:int} )?(auth=(%{INT:postfix_cmd_auth_accepted:int}/)?%{INT:postfix_cmd_auth:int} )?(mail=(%{INT:postfix_cmd_mail_accepted:int}/)?%{INT:postfix_cmd_mail:int} )?(rcpt=(%{INT:postfix_cmd_rcpt_accepted:int}/)?%{INT:postfix_cmd_rcpt:int} )?(bdat=(%{INT:postfix_cmd_bdat_accepted:int}/)?%{INT:postfix_cmd_bdat:int} )?(data=(%{INT:postfix_cmd_data_accepted:int}/)?%{INT:postfix_cmd_data:int} )?(rset=(%{INT:postfix_cmd_rset_accepted:int}/)?%{INT:postfix_cmd_rset:int} )?(noop=(%{INT:postfix_cmd_noop_accepted:int}/)?%{INT:postfix_cmd_noop:int} )?(quit=(%{INT:postfix_cmd_quit_accepted:int}/)?%{INT:postfix_cmd_quit:int} )?(unknown=(%{INT:postfix_cmd_unknown_accepted:int}/)?%{INT:postfix_cmd_unknown:int} )?commands=(%{INT:postfix_cmd_count_accepted:int}/)?%{INT:postfix_cmd_count:int}"
+        },
+        "patterns": [
+          "^%{POSTFIX_COMMAND_COUNTER_DATA}$"
+        ]
+      }
+    },
+    {
+      "remove": {
+        "field": [
+          "postfix_keyvalue_data",
+          "postfix_client",
+          "postfix_relay",
+          "postfix_delays",
+          "postfix_command_counter_data"
+        ],
+        "ignore_missing": true
+      }
+    },
+    {
+      "convert": {
+        "ignore_missing": true,
+        "field": "postfix_nrcpt",
+        "type": "integer"
+      }
+    },
+    {
+      "convert": {
+        "ignore_missing": true,
+        "field": "postfix_size",
+        "type": "integer"
+      }
+    },
+    {
+      "convert": {
+        "ignore_missing": true,
+        "field": "postfix_delay",
+        "type": "float"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "program",
+        "target_field": "process.name"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_message_level",
+        "target_field": "log.level"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_client_ip",
+        "target_field": "source.ip"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_client_hostname",
+        "target_field": "source.domain"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_client_port",
+        "target_field": "source.port"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_relay_ip",
+        "target_field": "destination.ip"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_relay_hostname",
+        "target_field": "destination.domain"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_relay_port",
+        "target_field": "destination.port"
+      }
+    },
+    {
+      "rename": {
+        "if": "ctx.postfix_server_ip != null && ctx.destination?.ip == null",
+        "field": "postfix_server_ip",
+        "target_field": "destination.ip"
+      }
+    },
+    {
+      "rename": {
+        "if": "ctx.postfix_server_port != null && ctx.destination?.port == null",
+        "field": "postfix_server_port",
+        "target_field": "destination.port"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_from",
+        "target_field": "email.from.address"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_to",
+        "target_field": "email.to.address"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_message-id",
+        "target_field": "email.message_id"
+      }
+    },
+    {
+      "rename": {
+        "ignore_missing": true,
+        "field": "postfix_queueid",
+        "target_field": "email.local_id"
+      }
+    },
+    {
+      "set": {
+        "field": "event.kind",
+        "value": "event",
+        "override": false
+      }
+    },
+    {
+      "append": {
+        "field": "event.category",
+        "value": ["email"],
+        "allow_duplicates": false
+      }
+    },
+    {
+      "script": {
+        "tag": "ecs_event_outcome",
+        "lang": "painless",
+        "source": "def s = ctx.postfix_status; if (s != null) { if (ctx.event == null) { ctx.event = new HashMap(); } if (s == 'sent' || s == 'forwarded' || s == 'delivered') { ctx.event.outcome = 'success'; } else if (s == 'bounced' || s == 'deferred' || s == 'expired' || s == 'undeliverable') { ctx.event.outcome = 'failure'; } }"
+      }
+    },
+    {
+      "script": {
+        "tag": "ecs_tls",
+        "lang": "painless",
+        "source": "def v = ctx.remove('postfix_tls_version'); if (v != null) { if (ctx.tls == null) { ctx.tls = new HashMap(); } ctx.tls.established = true; if (v.startsWith('TLSv')) { ctx.tls.version_protocol = 'tls'; ctx.tls.version = v.substring(4); } else if (v.startsWith('SSLv')) { ctx.tls.version_protocol = 'ssl'; ctx.tls.version = v.substring(4); } else { ctx.tls.version = v; } } def c = ctx.remove('postfix_tls_cipher'); if (c != null) { if (ctx.tls == null) { ctx.tls = new HashMap(); } ctx.tls.cipher = c; }"
+      }
+    },
+    {
+      "geoip": {
+        "ignore_missing": true,
+        "field": "source.ip",
+        "target_field": "source.geo"
+      }
+    },
+    {
+      "append": {
+        "if": "ctx.source?.ip != null",
+        "field": "related.ip",
+        "value": ["{{source.ip}}"],
+        "allow_duplicates": false
+      }
+    },
+    {
+      "append": {
+        "if": "ctx.destination?.ip != null",
+        "field": "related.ip",
+        "value": ["{{destination.ip}}"],
+        "allow_duplicates": false
+      }
+    },
+    {
+      "script": {
+        "tag": "namespace_custom_fields",
+        "lang": "painless",
+        "source": "Map pf = new HashMap(); Map dk = new HashMap(); for (String k : new ArrayList(ctx.keySet())) { if (k.startsWith('postfix_')) { pf.put(k.substring(8), ctx.remove(k)); } else if (k.startsWith('opendkim_')) { dk.put(k.substring(9), ctx.remove(k)); } } if (!pf.isEmpty()) { ctx.postfix = pf; } if (!dk.isEmpty()) { ctx.opendkim = dk; }"
+      }
+    }
+  ],
+  "on_failure": [
+    {
+      "set": {
+        "field": "error.message",
+        "value": "{{ _ingest.on_failure_processor_type }} [{{ _ingest.on_failure_processor_tag }}]: {{ _ingest.on_failure_message }}"
+      }
+    },
+    {
+      "set": {
+        "field": "error.tag",
+        "value": "parse_failure"
+      }
+    },
+    {
+      "append": {
+        "field": "tags",
+        "value": ["parse_failure"],
+        "allow_duplicates": false
+      }
+    }
+  ]
+}
