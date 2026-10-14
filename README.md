@@ -42,6 +42,15 @@ PUT _index_template/logs-postfix
 
 Then ship to a data stream such as `logs-postfix-default`. This replaces the built-in `logs@default-pipeline` for those data streams. Alternatively, set `pipeline: logs-postfix@custom` on the Filebeat or Elastic Agent input.
 
+## Install Dashboard
+
+`postfix_kibana_dashboard.json` is a Kibana 9.4+ dashboard ("Postfix Mail Overview") built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and trends, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse. Apply it in Kibana Dev Tools:
+
+```http
+PUT kbn:/api/dashboards/postfix-overview
+<paste contents of postfix_kibana_dashboard.json>
+```
+
 ## Validate with _simulate
 
 Run the sample messages through the pipeline before rollout:

@@ -1,0 +1,605 @@
+{
+  "title": "Postfix Mail Overview",
+  "panels": [
+    {
+      "type": "vis",
+      "id": "kpi-sent",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      },
+      "config": {
+        "title": "Recipients delivered",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE postfix.status == \"sent\" | STATS delivered = COUNT()"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "delivered"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-deferred",
+      "grid": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      },
+      "config": {
+        "title": "Recipients deferred",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE postfix.status == \"deferred\" | STATS deferred = COUNT()"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "deferred"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-bounced",
+      "grid": {
+        "x": 24,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      },
+      "config": {
+        "title": "Recipients bounced",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE postfix.status IN (\"bounced\", \"expired\") | STATS bounced = COUNT()"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "bounced"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-rejected",
+      "grid": {
+        "x": 36,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      },
+      "config": {
+        "title": "Rejected (smtpd, header checks, milters)",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE event.action IN (\"reject\", \"milter-reject\", \"defer\", \"discard\", \"milter-discard\") | STATS rejected = COUNT()"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "rejected"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "delivery-status-over-time",
+      "grid": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Delivery status over time",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "scale": "temporal",
+            "domain": {
+              "type": "fit",
+              "rounding": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_stacked",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-postfix-* | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND postfix.status IS NOT NULL | STATS recipients = COUNT() BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), postfix.status"
+            },
+            "x": {
+              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "recipients"
+              }
+            ],
+            "breakdown_by": {
+              "column": "postfix.status"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "rejections-over-time",
+      "grid": {
+        "x": 24,
+        "y": 6,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Rejections over time by action",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "scale": "temporal",
+            "domain": {
+              "type": "fit",
+              "rounding": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_stacked",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-postfix-* | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND event.action IN (\"reject\", \"milter-reject\", \"defer\", \"discard\", \"milter-discard\") | STATS rejections = COUNT() BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), event.action"
+            },
+            "x": {
+              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "rejections"
+              }
+            ],
+            "breakdown_by": {
+              "column": "event.action"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "top-reject-reasons",
+      "grid": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Top rejection reasons",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE event.action IN (\"reject\", \"milter-reject\", \"defer\", \"discard\", \"milter-discard\") | EVAL reason = COALESCE(postfix.status_message, postfix.milter_message, postfix.prepend_value) | STATS rejections = COUNT() BY event.action, reason | SORT rejections DESC | LIMIT 20"
+        },
+        "rows": [
+          {
+            "column": "event.action"
+          },
+          {
+            "column": "reason"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "rejections"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "top-rejected-clients",
+      "grid": {
+        "x": 24,
+        "y": 18,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Top rejected clients",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE event.action IN (\"reject\", \"milter-reject\", \"defer\", \"discard\", \"milter-discard\") AND source.ip IS NOT NULL | STATS rejections = COUNT() BY source.ip, source.geo.country_name, source.as.organization.name | SORT rejections DESC | LIMIT 20"
+        },
+        "rows": [
+          {
+            "column": "source.ip"
+          },
+          {
+            "column": "source.geo.country_name"
+          },
+          {
+            "column": "source.as.organization.name"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "rejections"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "dnsbl-hits",
+      "grid": {
+        "x": 0,
+        "y": 30,
+        "w": 16,
+        "h": 12
+      },
+      "config": {
+        "title": "DNSBL rejections by list",
+        "type": "pie",
+        "styling": {
+          "donut_hole": "m"
+        },
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE postfix.dnsbl_domain IS NOT NULL | STATS hits = COUNT() BY postfix.dnsbl_domain"
+        },
+        "metrics": [
+          {
+            "column": "hits"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "postfix.dnsbl_domain"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "sasl-failures",
+      "grid": {
+        "x": 16,
+        "y": 30,
+        "w": 16,
+        "h": 12
+      },
+      "config": {
+        "title": "SASL authentication failures",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE log.level == \"warning\" AND postfix.sasl_method IS NOT NULL | STATS failures = COUNT(), usernames = COUNT_DISTINCT(postfix.sasl_username) BY source.ip, source.geo.country_name | SORT failures DESC | LIMIT 20"
+        },
+        "rows": [
+          {
+            "column": "source.ip"
+          },
+          {
+            "column": "source.geo.country_name"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "failures"
+          },
+          {
+            "column": "usernames"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tls-versions",
+      "grid": {
+        "x": 32,
+        "y": 30,
+        "w": 16,
+        "h": 12
+      },
+      "config": {
+        "title": "TLS sessions by protocol version",
+        "type": "pie",
+        "styling": {
+          "donut_hole": "m"
+        },
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE tls.version IS NOT NULL | STATS sessions = COUNT() BY tls.version"
+        },
+        "metrics": [
+          {
+            "column": "sessions"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "tls.version"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "top-sender-domains",
+      "grid": {
+        "x": 0,
+        "y": 42,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Top sender domains (messages queued)",
+        "type": "xy",
+        "layers": [
+          {
+            "type": "bar_horizontal",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-postfix-* | WHERE postfix.nrcpt IS NOT NULL AND postfix.from_domain IS NOT NULL | STATS messages = COUNT() BY postfix.from_domain | SORT messages DESC | LIMIT 10"
+            },
+            "x": {
+              "column": "postfix.from_domain"
+            },
+            "y": [
+              {
+                "column": "messages"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "top-recipient-domains",
+      "grid": {
+        "x": 24,
+        "y": 42,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Top recipient domains (delivery attempts)",
+        "type": "xy",
+        "layers": [
+          {
+            "type": "bar_horizontal",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-postfix-* | WHERE postfix.status IS NOT NULL AND postfix.to_domain IS NOT NULL | STATS attempts = COUNT() BY postfix.to_domain | SORT attempts DESC | LIMIT 10"
+            },
+            "x": {
+              "column": "postfix.to_domain"
+            },
+            "y": [
+              {
+                "column": "attempts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "relay-delays",
+      "grid": {
+        "x": 0,
+        "y": 54,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Delivery delay by relay (seconds)",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE postfix.status == \"sent\" AND destination.domain IS NOT NULL | STATS deliveries = COUNT(), avg_delay = AVG(postfix.delay), p95_delay = PERCENTILE(postfix.delay, 95) BY destination.domain | SORT deliveries DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "destination.domain"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "deliveries"
+          },
+          {
+            "column": "avg_delay"
+          },
+          {
+            "column": "p95_delay"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "warnings-by-daemon",
+      "grid": {
+        "x": 24,
+        "y": 54,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Warnings and errors by daemon",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE log.level IN (\"warning\", \"error\", \"fatal\", \"panic\") | STATS events = COUNT() BY log.level, process.name | SORT events DESC | LIMIT 20"
+        },
+        "rows": [
+          {
+            "column": "log.level"
+          },
+          {
+            "column": "process.name"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "dkim-results",
+      "grid": {
+        "x": 0,
+        "y": 66,
+        "w": 16,
+        "h": 10
+      },
+      "config": {
+        "title": "DKIM verification (OpenDKIM)",
+        "type": "pie",
+        "styling": {
+          "donut_hole": "m"
+        },
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE opendkim.verification IS NOT NULL | STATS messages = COUNT() BY opendkim.verification"
+        },
+        "metrics": [
+          {
+            "column": "messages"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "opendkim.verification"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "dmarc-results",
+      "grid": {
+        "x": 16,
+        "y": 66,
+        "w": 16,
+        "h": 10
+      },
+      "config": {
+        "title": "DMARC results (OpenDMARC)",
+        "type": "pie",
+        "styling": {
+          "donut_hole": "m"
+        },
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE opendmarc.result IS NOT NULL | STATS messages = COUNT() BY opendmarc.result"
+        },
+        "metrics": [
+          {
+            "column": "messages"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "opendmarc.result"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "spf-results",
+      "grid": {
+        "x": 32,
+        "y": 66,
+        "w": 16,
+        "h": 10
+      },
+      "config": {
+        "title": "SPF results (policyd-spf)",
+        "type": "pie",
+        "styling": {
+          "donut_hole": "m"
+        },
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE policyd_spf.result IS NOT NULL | STATS checks = COUNT() BY policyd_spf.result"
+        },
+        "metrics": [
+          {
+            "column": "checks"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "policyd_spf.result"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "parse-health",
+      "grid": {
+        "x": 0,
+        "y": 76,
+        "w": 48,
+        "h": 10
+      },
+      "config": {
+        "title": "Unparsed or partially parsed messages",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-postfix-* | WHERE tags IS NOT NULL | MV_EXPAND tags | STATS events = COUNT() BY tags, process.name | SORT events DESC | LIMIT 20"
+        },
+        "rows": [
+          {
+            "column": "tags"
+          },
+          {
+            "column": "process.name"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ]
+      }
+    }
+  ],
+  "time_range": {
+    "from": "now-24h",
+    "to": "now"
+  }
+}
