@@ -21,6 +21,8 @@
             "anvil_conn_count": { "type": "long" },
             "anvil_conn_period": { "type": "keyword" },
             "anvil_conn_rate": { "type": "long" },
+            "anvil_rate": { "type": "long" },
+            "anvil_rate_type": { "type": "keyword" },
             "anvil_timestamp": { "type": "keyword" },
             "bounce_queueid": { "type": "keyword" },
             "bounce_reason": { "type": "keyword" },
@@ -37,6 +39,8 @@
             "cmd_data_accepted": { "type": "long" },
             "cmd_ehlo": { "type": "long" },
             "cmd_ehlo_accepted": { "type": "long" },
+            "cmd_etrn": { "type": "long" },
+            "cmd_etrn_accepted": { "type": "long" },
             "cmd_helo": { "type": "long" },
             "cmd_helo_accepted": { "type": "long" },
             "cmd_mail": { "type": "long" },
@@ -53,6 +57,12 @@
             "cmd_starttls_accepted": { "type": "long" },
             "cmd_unknown": { "type": "long" },
             "cmd_unknown_accepted": { "type": "long" },
+            "cmd_vrfy": { "type": "long" },
+            "cmd_vrfy_accepted": { "type": "long" },
+            "cmd_xclient": { "type": "long" },
+            "cmd_xclient_accepted": { "type": "long" },
+            "cmd_xforward": { "type": "long" },
+            "cmd_xforward_accepted": { "type": "long" },
             "config_path": { "type": "keyword" },
             "conn_use": { "type": "long" },
             "delay": { "type": "double" },
@@ -71,6 +81,7 @@
             "improper_pipelining_data": { "type": "keyword" },
             "local_response": { "type": "keyword" },
             "message": { "type": "match_only_text" },
+            "message_level": { "type": "keyword" },
             "milter_data": { "type": "keyword" },
             "milter_message": { "type": "keyword" },
             "milter_result": { "type": "keyword" },
@@ -99,6 +110,10 @@
             "proxy_smtp_stage": { "type": "keyword" },
             "proxy_status_code": { "type": "long" },
             "proxy_status_code_enhanced": { "type": "keyword" },
+            "qmgr_response": { "type": "keyword" },
+            "queued_as": { "type": "keyword" },
+            "ratelimit_type": { "type": "keyword" },
+            "ratelimit_value": { "type": "long" },
             "relay_service": { "type": "keyword" },
             "resent-message-id": { "type": "keyword" },
             "sasl_method": { "type": "keyword" },
@@ -113,6 +128,8 @@
             "scache_success": { "type": "long" },
             "scache_timestamp": { "type": "keyword" },
             "script_action": { "type": "keyword" },
+            "server_ip": { "type": "ip" },
+            "server_port": { "type": "long" },
             "service": { "type": "keyword" },
             "size": { "type": "long" },
             "smtp_lostconn_data": { "type": "keyword" },
@@ -129,6 +146,10 @@
             "table": { "type": "keyword" },
             "termination_signal": { "type": "long" },
             "tls_cipher_size": { "type": "long" },
+            "tls_client_digest": { "type": "keyword" },
+            "tls_client_signature": { "type": "keyword" },
+            "tls_client_signature_curve": { "type": "keyword" },
+            "tls_client_signature_size": { "type": "long" },
             "tls_error": { "type": "keyword" },
             "tls_key_exchange": { "type": "keyword" },
             "tls_server_digest": { "type": "keyword" },
@@ -151,6 +172,8 @@
             "client_hostname": { "type": "keyword" },
             "client_ip": { "type": "ip" },
             "domain": { "type": "keyword" },
+            "errno": { "type": "long" },
+            "exit_status": { "type": "long" },
             "key_error": { "type": "keyword" },
             "lifecycle_message": { "type": "keyword" },
             "parse_fail_header": { "type": "keyword" },
@@ -160,6 +183,33 @@
             "signature_existing": { "type": "keyword" },
             "verification": { "type": "keyword" },
             "version": { "type": "keyword" }
+          }
+        },
+        "opendmarc": {
+          "properties": {
+            "args": { "type": "keyword" },
+            "domain": { "type": "keyword" },
+            "errno": { "type": "long" },
+            "exit_status": { "type": "long" },
+            "lifecycle_message": { "type": "keyword" },
+            "result": { "type": "keyword" },
+            "spf_domain": { "type": "keyword" },
+            "spf_result": { "type": "keyword" },
+            "spf_scope": { "type": "keyword" },
+            "version": { "type": "keyword" }
+          }
+        },
+        "policyd_spf": {
+          "properties": {
+            "comment": { "type": "keyword" },
+            "envelope_from": { "type": "keyword" },
+            "helo": { "type": "keyword" },
+            "identity": { "type": "keyword" },
+            "message": { "type": "keyword" },
+            "receiver": { "type": "keyword" },
+            "result": { "type": "keyword" },
+            "status_code": { "type": "long" },
+            "status_code_enhanced": { "type": "keyword" }
           }
         },
         "source": {
@@ -176,6 +226,12 @@
                 "region_iso_code": { "type": "keyword" },
                 "region_name": { "type": "keyword" },
                 "location": { "type": "geo_point" }
+              }
+            },
+            "as": {
+              "properties": {
+                "number": { "type": "long" },
+                "organization": { "properties": { "name": { "type": "keyword" } } }
               }
             }
           }
@@ -217,15 +273,20 @@
         },
         "event": {
           "properties": {
+            "action": { "type": "keyword" },
             "kind": { "type": "keyword" },
             "category": { "type": "keyword" },
             "outcome": { "type": "keyword" },
-            "original": { "type": "keyword", "index": false, "doc_values": false }
+            "original": { "type": "keyword", "index": false, "doc_values": false },
+            "timezone": { "type": "keyword" },
+            "type": { "type": "keyword" }
           }
         },
         "related": {
           "properties": {
-            "ip": { "type": "ip" }
+            "ip": { "type": "ip" },
+            "hosts": { "type": "keyword" },
+            "user": { "type": "keyword" }
           }
         },
         "error": {
