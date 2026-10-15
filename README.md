@@ -44,7 +44,7 @@ Then ship to a data stream such as `logs-postfix-default`. This replaces the bui
 
 ## Install Dashboard
 
-`postfix_kibana_dashboard.ndjson` is a dashboard ("Postfix Mail Overview") for Kibana 8.19 and later, built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and hourly trends, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse.
+`postfix_kibana_dashboard.ndjson` is a dashboard ("Postfix Mail Overview") for Kibana 8.19 and later, built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and hourly trends, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, message sizes (total volume, average and largest message, volume over time, size ranges, and sender domains by volume), relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse.
 
 Import it in Kibana under **Stack Management → Saved Objects → Import**, choosing the NDJSON file. Re-importing with "Automatically overwrite conflicts" replaces the existing `postfix-overview` dashboard.
 
