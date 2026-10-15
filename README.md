@@ -46,7 +46,11 @@ Then ship to a data stream such as `logs-postfix-default`. This replaces the bui
 
 `postfix_kibana_dashboard.ndjson` is a dashboard ("Postfix Mail Overview") for Kibana 8.19 and later, built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and hourly trends, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, message sizes (total volume, average and largest message, volume over time, size ranges, and sender domains by volume), top sender and recipient addresses by message count and data volume, relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse.
 
-Import it in Kibana under **Stack Management → Saved Objects → Import**, choosing the NDJSON file. Re-importing with "Automatically overwrite conflicts" replaces the existing `postfix-overview` dashboard.
+Controls at the top filter every panel by sending user (`email.from.address`), receiving user (`email.to.address`) or host (`host.name`, set by the shipper).
+
+Import it in Kibana under **Stack Management → Saved Objects → Import**, choosing the NDJSON file. It also creates a `logs-postfix-*` data view (id `logs-postfix`) that the controls use. Re-importing with "Automatically overwrite conflicts" replaces both.
+
+Each Postfix log line carries only some fields, so the controls narrow panels to the lines that contain the selected value. A sending-user filter keeps queue (`from=`) lines and rejects, so delivery counts drop to zero; a receiving-user filter keeps delivery and reject lines, so size panels drop to zero.
 
 ## Validate with _simulate
 

@@ -259,6 +259,7 @@
             "established": { "type": "boolean" }
           }
         },
+        "host": { "properties": { "name": { "type": "keyword" } } },
         "log": {
           "properties": {
             "level": { "type": "keyword" },
