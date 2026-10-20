@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Explicit mappings for every field emitted by the logs-postfix@custom ingest pipeline"
+    "description": "Explicit mappings for every field emitted by the logs-postfix@custom ingest pipeline, plus empty mappings for the Exchange integration fields that mail_flow_kibana_dashboard.ndjson queries, so its ES|QL panels work even when an Exchange integration isn't installed"
   },
   "template": {
     "settings": {
@@ -248,7 +248,8 @@
             "from": { "properties": { "address": { "type": "keyword" } } },
             "to": { "properties": { "address": { "type": "keyword" } } },
             "message_id": { "type": "keyword" },
-            "local_id": { "type": "keyword" }
+            "local_id": { "type": "keyword" },
+            "subject": { "type": "keyword" }
           }
         },
         "tls": {
@@ -260,6 +261,19 @@
           }
         },
         "host": { "properties": { "name": { "type": "keyword" } } },
+        "network": { "properties": { "bytes": { "type": "long" } } },
+        "server": { "properties": { "domain": { "type": "keyword" } } },
+        "microsoft": {
+          "properties": {
+            "exchange": { "properties": { "eventid": { "type": "keyword" } } },
+            "online_message_trace": {
+              "properties": {
+                "Size": { "type": "long" },
+                "Status": { "type": "keyword" }
+              }
+            }
+          }
+        },
         "log": {
           "properties": {
             "level": { "type": "keyword" },

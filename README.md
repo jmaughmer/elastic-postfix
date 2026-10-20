@@ -52,6 +52,20 @@ Import it in Kibana under **Stack Management → Saved Objects → Import**, cho
 
 Each Postfix log line carries only some fields, so the controls narrow panels to the lines that contain the selected value. A sending-user filter keeps queue (`from=`) lines and rejects, so delivery counts drop to zero; a receiving-user filter keeps delivery and reject lines, so size panels drop to zero.
 
+## Install Combined Mail Flow Dashboard
+
+`mail_flow_kibana_dashboard.ndjson` is a second dashboard ("Mail Flow Overview (Postfix + Exchange)", Kibana 8.19+) that combines this data stream with Elastic's [Microsoft Exchange Online Message Trace](https://www.elastic.co/docs/reference/integrations/microsoft_exchange_online_message_trace) and [Microsoft Exchange Server](https://www.elastic.co/docs/reference/integrations/microsoft_exchange_server) (message tracking) integrations. It shows totals and hourly trends by system, delivery outcomes by system, top senders and recipients across systems, messages seen by more than one system (matched on Message-ID), a searchable list of the latest message events, events by host, and data volume by system.
+
+Controls at the top filter every panel by sender (`email.from.address`), recipient (`email.to.address`) or host (`host.name`). Import it the same way, under **Stack Management → Saved Objects → Import**. It also creates a `mail-flow-logs` data view over all three sources for the controls.
+
+Install the current component template first. It maps the few Exchange fields the dashboard queries (`microsoft.exchange.eventid`, `microsoft.online_message_trace.Size`/`Status`, `network.bytes`, `server.domain`, `email.subject`) on the Postfix indices too, so the ES|QL panels don't fail with "Unknown column" when one of the Exchange integrations isn't installed.
+
+How the sources are lined up:
+
+- **Messages and data volume** count one event per message: the Postfix `queue active` line (`postfix.size`), the Exchange Server `RECEIVE` event (`network.bytes`), and each Exchange Online trace row (`Size`). Exchange Online returns one row per recipient, and a message received by several Exchange servers has a `RECEIVE` on each, so those systems can count a message more than once.
+- **Outcomes** map Postfix `status=sent/deferred/bounced/expired` and rejects, Exchange Online `Delivered/Pending/Failed/FilteredAsSpam/Quarantined`, and Exchange Server `DELIVER`/`SEND`/`DEFER`/`FAIL` onto delivered, deferred, failed and rejected/filtered.
+- **Hosts** use `host.name`, falling back to the Exchange Server `server.domain`. Exchange Online events have no host, so the host control filters them out.
+
 ## Validate with _simulate
 
 Run the sample messages through the pipeline before rollout:
