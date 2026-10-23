@@ -67,6 +67,14 @@ How the sources are lined up:
 - **Hosts** use `host.name`, falling back to the Exchange Server `server.domain`. Exchange Online events have no host, so the host control filters them out.
 - **IDs and subjects** aren't the same across systems. `email.local_id` is the Postfix queue ID, the Exchange Online `MessageTraceId`, or the Exchange Server local ID, so it finds one system's view of a message. Postfix stores the Message-ID without angle brackets and Exchange Online keeps them, so the Message-ID control lists both forms; search for part of the ID to find both. Postfix logs no subject, so the subject control filters out Postfix events.
 
+### All-clusters version
+
+`mail_flow_all_clusters_kibana_dashboard.ndjson` is the same dashboard ("Mail Flow Overview (Postfix + Exchange) - All Clusters (may be slow)") with every source also searched on all connected remote clusters through ES|QL cross-cluster search: each `FROM` lists the local pattern and the same pattern with `*:` in front (for example `logs-postfix-*, *:logs-postfix-*`), because `*:` matches remote clusters only. Its controls use their own `mail-flow-logs-all-clusters` data view with the same patterns, so their lists include remote values. It has its own ids, so it imports alongside the local dashboard.
+
+- Remote clusters must already be connected to this cluster, run 8.16 or later, and have a license that covers cross-cluster search.
+- Every panel queries every remote, so it can respond slowly. A remote that is down or doesn't have the indices is skipped, and its panels show a partial-results warning instead of failing.
+- Each remote should have the current component template on its Postfix indices if it doesn't run both Exchange integrations.
+
 ## Validate with _simulate
 
 Run the sample messages through the pipeline before rollout:
