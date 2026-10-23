@@ -75,6 +75,10 @@ How the sources are lined up:
 - Every panel queries every remote, so it can respond slowly. A remote that is down or doesn't have the indices is skipped, and its panels show a partial-results warning instead of failing.
 - Each remote should have the current component template on its Postfix indices if it doesn't run both Exchange integrations.
 
+### Local + EXAMPLE cluster version
+
+`mail_flow_example_cluster_kibana_dashboard.ndjson` ("Mail Flow Overview (Postfix + Exchange) - Local + EXAMPLE Cluster (may be slow)") searches the local cluster and only the remote cluster whose alias is `EXAMPLE`: each `FROM` lists the local pattern and the same pattern with `EXAMPLE:` in front (for example `logs-postfix-*, EXAMPLE:logs-postfix-*`). Its controls use their own `mail-flow-logs-example` data view, and it has its own ids, so it imports alongside the other two. The same requirements apply as for the all-clusters version, for `EXAMPLE` only. The alias must match the remote cluster's name in this cluster's remote-cluster settings exactly, including case.
+
 ## Validate with _simulate
 
 Run the sample messages through the pipeline before rollout:
