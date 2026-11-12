@@ -801,6 +801,165 @@
     },
     {
       "script": {
+        "tag": "postfix_activity",
+        "description": "postfix.activity: one word for what happened to the mail (the delivery status, or rejected/discarded/held/queued). postfix.reason: the response text of anything that wasn't a success, whichever daemon logged it",
+        "lang": "painless",
+        "source": """
+          String s = ctx.postfix_status;
+          String a = ctx.event.action;
+          String act = null;
+          if (s != null && !s.isEmpty()) {
+            act = s.toLowerCase();
+          } else if (a == 'reject' || a == 'milter-reject' || a == 'defer' || ctx.postfix_proxy_result == 'reject' || ctx.postfix_postscreen_toobusy_data != null) {
+            act = 'rejected';
+          } else if (a == 'discard' || a == 'milter-discard') {
+            act = 'discarded';
+          } else if (a == 'hold' || a == 'milter-hold') {
+            act = 'held';
+          } else if (ctx.postfix_size != null && ctx.postfix_nrcpt != null) {
+            act = 'queued';
+          }
+          if (act == null) {
+            return;
+          }
+          ctx.postfix_activity = act;
+          if (act == 'sent' || act == 'queued' || act == 'deliverable') {
+            return;
+          }
+          String r = null;
+          for (String f : ['postfix_smtp_response', 'postfix_local_response', 'postfix_pipe_response', 'postfix_error_response', 'postfix_qmgr_response', 'postfix_status_message', 'postfix_milter_message', 'postfix_prepend_value', 'postfix_proxy_message', 'postfix_postscreen_toobusy_data']) {
+            def v = ctx[f];
+            if (v != null && v.toString().length() > 0) {
+              r = v.toString();
+              break;
+            }
+          }
+          if (r == null && act == 'expired') {
+            r = 'returned to sender';
+          }
+          if (r != null) {
+            ctx.postfix_reason = r;
+          }
+        """
+      }
+    },
+    {
+      "grok": {
+        "tag": "grok_postfix_reason_code",
+        "description": "SMTP reply code of a failed delivery (host ... said: 550 5.1.1 ...), or the enhanced code that starts a header_checks or milter reply",
+        "if": "ctx.postfix_reason != null && ctx.postfix_status_code == null",
+        "field": "postfix_reason",
+        "pattern_definitions": {
+          "POSTFIX_STATUS_CODE": """\d{3}""",
+          "POSTFIX_STATUS_CODE_ENHANCED": """\d\.\d+\.\d+"""
+        },
+        "patterns": [
+          """(?:said|refused to talk to me): %{POSTFIX_STATUS_CODE:postfix_status_code:int}[ -](?:%{POSTFIX_STATUS_CODE_ENHANCED:postfix_status_code_enhanced}[ -])?""",
+          """^%{POSTFIX_STATUS_CODE:postfix_status_code:int}[ -](?:%{POSTFIX_STATUS_CODE_ENHANCED:postfix_status_code_enhanced}[ -])?""",
+          """^%{POSTFIX_STATUS_CODE_ENHANCED:postfix_status_code_enhanced} """
+        ],
+        "ignore_failure": true
+      }
+    },
+    {
+      "grok": {
+        "tag": "grok_postfix_reason_stage",
+        "description": "SMTP command the remote server was answering",
+        "if": "ctx.postfix_reason != null && ctx.postfix_smtp_stage == null && ctx.postfix_reason.contains('(in reply to ')",
+        "field": "postfix_reason",
+        "patterns": [
+          """\(in reply to (?<postfix_smtp_stage>[^()]+?)(?: command)?\)$"""
+        ],
+        "ignore_failure": true
+      }
+    },
+    {
+      "grok": {
+        "tag": "grok_postfix_reason_host",
+        "description": "relay=none on a failed delivery: take the server Postfix was talking to from the response text (connect to mx.example.org[203.0.113.5]:25: Connection timed out)",
+        "if": "ctx.postfix_reason != null && ctx.destination?.ip == null && ctx.destination?.domain == null",
+        "field": "postfix_reason",
+        "pattern_definitions": {
+          "POSTFIX_HOSTNAME": """[0-9A-Za-z_][0-9A-Za-z_.-]*"""
+        },
+        "patterns": [
+          """(?:connect to|lost connection with|conversation with|host) %{POSTFIX_HOSTNAME:destination.domain}?\[%{IP:destination.ip}\](?::%{INT:destination.port:int})?"""
+        ],
+        "ignore_failure": true
+      }
+    },
+    {
+      "remove": {
+        "if": "ctx.destination?.domain != null && ctx.destination.domain == ctx.destination.ip",
+        "field": "destination.domain"
+      }
+    },
+    {
+      "script": {
+        "tag": "postfix_reason_category",
+        "description": "postfix.reason_category: group postfix.reason into a short list of common causes, for 'most common reasons' breakdowns. A keyword match on the response text and DSN code, so treat it as a guide; the first rule that matches wins",
+        "if": "ctx.postfix_reason != null",
+        "lang": "painless",
+        "source": """
+          String l = ctx.postfix_reason.toLowerCase();
+          String d = ctx.postfix_dsn != null ? ctx.postfix_dsn : ctx.postfix_status_code_enhanced;
+          if (d == null) {
+            d = '';
+          }
+          String c;
+          if (ctx.postfix_dnsbl_domain != null || l.contains('blocked using') || l.contains('blocklist') || l.contains('block list') || l.contains('blacklist') || l.contains('spamhaus') || l.contains('reputation')) {
+            c = 'Blocklisted or poor reputation';
+          } else if (l.contains('greylist') || l.contains('graylist')) {
+            c = 'Greylisted';
+          } else if (l.contains('quota') || l.contains('mailbox full') || l.contains('mailbox is full') || l.contains('out of storage') || l.contains('insufficient system storage') || d == '5.2.2' || d == '4.2.2') {
+            c = 'Mailbox full';
+          } else if (l.contains('relay access denied') || l.contains('relaying denied') || l.contains('relay not permitted') || l.contains('unable to relay')) {
+            c = 'Relay denied';
+          } else if (l.contains('spf') || l.contains('dkim') || l.contains('dmarc')) {
+            c = 'Sender authentication (SPF, DKIM, DMARC)';
+          } else if (l.contains('sender address rejected') || l.contains('sender rejected')) {
+            c = 'Sender rejected';
+          } else if (l.contains('helo command rejected') || l.contains('client host rejected') || l.contains('cannot find your hostname') || l.contains('cannot find your reverse hostname')) {
+            c = 'Client or HELO rejected';
+          } else if (l.contains('user unknown') || l.contains('unknown user') || l.contains('no such user') || l.contains('no such recipient') || l.contains('unknown recipient') || l.contains('does not exist') || l.contains('doesn\'t exist') || l.contains('no mailbox') || l.contains('mailbox unavailable') || l.contains('mailbox not found') || l.contains('invalid recipient') || l.contains('recipient not found') || l.contains('address unknown') || l.contains('unknown address') || l.contains('account is disabled') || l.contains('account disabled') || d == '5.1.1' || d == '5.1.10' || d == '5.2.1') {
+            c = 'Unknown or disabled recipient';
+          } else if (l.contains('too large') || l.contains('too big') || l.contains('size limit') || l.contains('exceeds size') || l.contains('message size') || d == '5.3.4' || d == '5.2.3') {
+            c = 'Message too large';
+          } else if (l.contains('loops back') || l.contains('mail loop') || l.contains('too many hops')) {
+            c = 'Mail loop';
+          } else if (l.contains('rate limit') || l.contains('too many') || l.contains('throttl') || l.contains('limit exceeded') || l.contains('too fast')) {
+            c = 'Rate limited';
+          } else if (l.contains('spam') || l.contains('virus') || l.contains('malware') || l.contains('phish') || l.contains('unsolicited') || l.contains('content rejected') || l.contains('message content') || l.contains('quarantine') || l.contains('banned')) {
+            c = 'Spam or content policy';
+          } else if (l.contains('timed out') || l.contains('timeout')) {
+            c = 'Connection timed out';
+          } else if (l.contains('connection refused')) {
+            c = 'Connection refused';
+          } else if (l.contains('host not found') || l.contains('domain not found') || l.contains('host or domain name not found') || l.contains('name service error') || l.contains('does not accept mail') || l.contains('malformed dns')) {
+            c = 'DNS or host lookup failure';
+          } else if (l.contains('lost connection') || l.contains('connection reset') || l.contains('dropped connection') || l.contains('network is unreachable') || l.contains('no route to host') || l.contains('broken pipe') || l.contains('refused to talk to me')) {
+            c = 'Connection lost or unreachable';
+          } else if (l.contains('tls') || l.contains('certificate') || l.contains('ssl')) {
+            c = 'TLS failure';
+          } else if (l.contains('authentication') || l.contains('sasl') || d == '5.7.8') {
+            c = 'Authentication required or failed';
+          } else if (ctx.postfix_activity == 'expired' || l.contains('returned to sender')) {
+            c = 'Expired in queue';
+          } else if (l.contains('temporarily suspended') || l.contains('transport unavailable') || l.contains('transport is unavailable')) {
+            c = 'Delivery suspended or transport unavailable';
+          } else if (l.contains('denied') || l.contains('rejected') || l.contains('not allowed') || l.contains('not permitted') || l.contains('refused') || l.contains('blocked') || l.contains('policy')) {
+            c = 'Refused by policy';
+          } else if (l.contains('try again') || l.contains('temporar')) {
+            c = 'Temporary failure (other)';
+          } else {
+            c = 'Other';
+          }
+          ctx.postfix_reason_category = c;
+        """
+      }
+    },
+    {
+      "script": {
         "tag": "ecs_tls",
         "lang": "painless",
         "source": "def v = ctx.remove('postfix_tls_version'); if (v != null) { if (ctx.tls == null) { ctx.tls = new HashMap(); } ctx.tls.established = true; if (v.startsWith('TLSv')) { ctx.tls.version_protocol = 'tls'; ctx.tls.version = v.substring(4); } else if (v.startsWith('SSLv')) { ctx.tls.version_protocol = 'ssl'; ctx.tls.version = v.substring(4); } else { ctx.tls.version = v; } } def c = ctx.remove('postfix_tls_cipher'); if (c != null) { if (ctx.tls == null) { ctx.tls = new HashMap(); } ctx.tls.cipher = c; }"

@@ -44,13 +44,47 @@ Then ship to a data stream such as `logs-postfix-default`. This replaces the bui
 
 ## Install Dashboard
 
-`postfix_kibana_dashboard.ndjson` is a dashboard ("Postfix Mail Overview") for Kibana 8.19 and later, built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and hourly trends, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, message sizes (total volume, average and largest message, volume over time, size ranges, and sender domains by volume), top sender and recipient addresses by message count and data volume, relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse.
+`postfix_kibana_dashboard.ndjson` is a dashboard ("Postfix Mail Overview") for Kibana 8.19 and later, built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and hourly trends, a breakdown per activity (sent, deferred, bounced, expired, rejected), why mail was deferred, bounced or rejected, messages by size and outcome, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, message sizes (total volume, average and largest message, volume over time, size ranges, and sender domains by volume), top sender and recipient addresses by message count and data volume, relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse.
 
 Controls at the top filter every panel by sending user (`email.from.address`), receiving user (`email.to.address`) or host (`host.name`, set by the shipper).
 
 Import it in Kibana under **Stack Management → Saved Objects → Import**, choosing the NDJSON file. It also creates a `logs-postfix-*` data view (id `logs-postfix`) that the controls use. Re-importing with "Automatically overwrite conflicts" replaces both.
 
 Each Postfix log line carries only some fields, so the controls narrow panels to the lines that contain the selected value. A sending-user filter keeps queue (`from=`) lines and rejects, so delivery counts drop to zero; a receiving-user filter keeps delivery and reject lines, so size panels drop to zero.
+
+### Activity and size filters
+
+Three more controls filter by what happened to the mail and by how big it was. They need the current pipeline and component template (`postfix.activity`, `postfix.reason` and `postfix.reason_category`), so install those first; lines indexed before that have no activity and don't appear in these panels.
+
+- **Activity**: `All`, `Not delivered` (everything except sent), or one of `sent`, `deferred`, `bounced`, `expired`, `rejected`, `discarded`, `held`. It reads `postfix.activity`.
+- **Min size (KB)** and **Max size (KB, 0 = any)**: a size range in KB from `postfix.size`. `0` means no limit on that side.
+
+These are ES|QL variable controls (`?activity`, `?min_size_kb`, `?max_size_kb`), not data-view controls, so they pick one value at a time and only change the panels whose query uses them:
+
+| Section | Activity | Size | Counts |
+| --- | --- | --- | --- |
+| Mail activity | yes | no | log lines: one per delivery attempt or reject |
+| Why mail was not delivered | yes | no | log lines |
+| Messages by size and activity | yes | yes | messages: lines joined on host and queue ID |
+| Message size panels further down (messages queued, data queued, size ranges, top senders and recipients by volume) | no | yes | queue lines |
+
+To add a size step, edit the control and add a number to its list; the queries take any number. The four KPI tiles at the top and the panels not listed here ignore these three controls.
+
+Size is logged on the queue line (`from=`, `size=`) and the outcome on the delivery lines (`to=`, `status=`), so only the *Messages by size and activity* section can apply both filters at once. There, a message matches an activity when any of its recipients had it, and its *outcome* is the worst result seen: bounced, expired, rejected, discarded or held, then sent, then deferred. A message queued before the dashboard's time range has no size in range, so it drops out when a size limit is set. Rejects that never got a queue ID count as one message each with no size. These panels group every line in the time range by queue ID, so they are the slowest on the dashboard; shorten the time range if they lag. The sending-user and receiving-user controls keep only the lines with that address, which breaks this join, so use them with the other sections.
+
+### Activity panels
+
+*Mail activity* breaks the flow down per activity: hourly counts, a summary table (lines, messages, recipients, average, median, 95th percentile and maximum delay, and where the delay was spent: before the queue manager, in the queue, connection setup, transmission), 95th percentile delay over time, attempts by delay range, and the top recipient domains, relays, recipients and rejected senders with a count per activity.
+
+*Why mail was not delivered* covers deferred, bounced, expired, rejected, discarded and held mail:
+
+- the most common reasons by category, overall and over time
+- DSN status codes (`postfix.dsn`, or the enhanced code of a reject) and SMTP reply codes (`postfix.status_code`)
+- failed deliveries by relay or remote server
+- the most common response texts, with addresses in angle brackets masked so the same response groups together
+- the 100 newest lines with host, queue ID, sender (rejects only), recipient, relay, DSN, SMTP code, the SMTP command being answered, delay, category and the full response
+
+*Messages by size and activity* shows how many messages match and their volume, size statistics and size ranges by outcome, the top senders with a count per outcome, and the 100 newest matching messages with size, recipients, activities, DSN codes and responses.
 
 ## Install Combined Mail Flow Dashboard
 
@@ -415,6 +449,26 @@ POST _ingest/pipeline/logs-postfix@custom/_simulate
 		},
 		{
 			"_source": {
+				"message": "Oct 14 10:05:01 mail01 postfix/smtp[7007]: 4F2A1B3C4D: to=<nobody@example.org>, relay=mx.example.org[203.0.113.5]:25, delay=1.3, delays=0.1/0/0.6/0.6, dsn=5.1.1, status=bounced (host mx.example.org[203.0.113.5] said: 550 5.1.1 <nobody@example.org>: Recipient address rejected: User unknown in virtual mailbox table (in reply to RCPT TO command))"
+			}
+		},
+		{
+			"_source": {
+				"message": "Oct 14 10:05:02 mail01 postfix/smtp[7008]: 4F2A1B3C4D: to=<user@example.net>, relay=none, delay=30, delays=0.1/0/30/0, dsn=4.4.1, status=deferred (connect to mx.example.net[198.51.100.25]:25: Connection timed out)"
+			}
+		},
+		{
+			"_source": {
+				"message": "Oct 14 10:05:03 mail01 postfix/smtp[7009]: 4F2A1B3C4D: to=<full@example.org>, relay=mx.example.org[203.0.113.5]:25, delay=900, delays=899/0/0.5/0.5, dsn=4.2.2, status=deferred (host mx.example.org[203.0.113.5] said: 452-4.2.2 The recipient's inbox is out of storage space. 452 4.2.2 Please try again later (in reply to RCPT TO command))"
+			}
+		},
+		{
+			"_source": {
+				"message": "Oct 14 10:05:04 mail01 postfix/qmgr[23456]: 4F2A1B3C4D: from=<sender@example.net>, status=expired, returned to sender"
+			}
+		},
+		{
+			"_source": {
 				"message": "Oct 14 10:04:18 mail01 postfix/smtpd[2027]: something postfix has never logged"
 			}
 		}
@@ -431,6 +485,12 @@ What to check in the response:
 - The `disconnect ... xforward=1` document has `postfix.cmd_xforward: 1` and `event.type: ["connection", "end"]`.
 - The header_checks `reject:` document has `postfix.cleanup_action: reject`, `event.type: ["denied"]` and `event.outcome: failure`.
 - The relay to the content filter and the `.forward` delivery both have `postfix.queued_as: 5B6C7D8E9F`.
+- `postfix.activity` is `queued` on the `queue active` lines, `sent`/`deferred`/`bounced`/`expired` on delivery lines, `rejected` on the smtpd, header_checks and milter rejects, and `held` on the `hold:` line. Lines that aren't about a message (connect, TLS, warnings) have none.
+- The `status=bounced` document has `postfix.reason` starting `host mx.example.org[203.0.113.5] said: 550 5.1.1`, `postfix.reason_category: Unknown or disabled recipient`, `postfix.status_code: 550`, `postfix.status_code_enhanced: 5.1.1` and `postfix.smtp_stage: RCPT TO`.
+- The `452-4.2.2` deferral has `postfix.status_code: 452` and `postfix.reason_category: Mailbox full`.
+- The `relay=none` deferral with `connect to mx.example.net[198.51.100.25]:25: Connection timed out` has `destination.domain: mx.example.net`, `destination.ip: 198.51.100.25` and `postfix.reason_category: Connection timed out`.
+- The `status=expired` document has `postfix.reason: returned to sender` and `postfix.reason_category: Expired in queue`.
+- The `Relay access denied` reject has `postfix.reason_category: Relay denied`, and the `zen.spamhaus.org` reject has `Blocklisted or poor reputation`.
 - The `event.timezone: America/New_York` document has `@timestamp` `…T10:00:00.000-04:00`, and the `Dec 31` line is dated the previous year.
 
 ## Notes
@@ -444,6 +504,11 @@ What to check in the response:
 - Empty envelope senders (common in bounces and DSNs) are handled by setting `postfix.null_sender: true` and omitting `email.from.address`, rather than substituting a placeholder address.
 - `NOQUEUE` is not stored as `email.local_id`, and `unknown` (no reverse DNS) is not stored as `source.domain`.
 - `event.action` is the delivery status (`sent`, `deferred`, ...) or the access/header/milter action (`reject`, `hold`, `milter-reject`, ...), or `connect`/`disconnect` for smtpd sessions. `event.type` is `denied` for rejects, `connection` with `start`/`end` for sessions, and `info` otherwise. `event.outcome` follows the delivery status, and rejects count as `failure`.
+- `postfix.activity` says in one word what happened to the mail, for filtering: the delivery status in lower case (`sent`, `deferred`, `bounced`, `expired`, and the address-verification results `deliverable`/`undeliverable`), `rejected` (smtpd, postscreen, header/body checks, milter and proxy rejects), `discarded`, `held`, or `queued` for the `queue active` line that carries the size. A deferred message logs a new `queue active` line each time it is retried.
+- `postfix.reason` is the response text of anything that wasn't a success, whichever daemon logged it: the text in parentheses after `status=deferred`/`status=bounced`, or the reply given to a rejected client. The per-daemon fields (`postfix.smtp_response`, `postfix.error_response`, `postfix.status_message` and so on) are still set.
+- For a failed delivery, `postfix.status_code`, `postfix.status_code_enhanced` and `postfix.smtp_stage` are the remote server's SMTP reply (`host ... said: 550 5.1.1 ... (in reply to RCPT TO command)`); for a reject they are this server's reply to the client. `postfix.dsn` is the status Postfix itself assigned to the delivery.
+- When a failed delivery logs `relay=none`, `destination.domain`, `destination.ip` and `destination.port` are taken from the response text (`connect to mx.example.org[203.0.113.5]:25: ...`) if it names a server.
+- `postfix.reason_category` groups `postfix.reason` into common causes (unknown recipient, mailbox full, greylisted, rate limited, blocklisted, relay denied, spam or content policy, sender authentication, connection timed out/refused/lost, DNS failure, TLS failure, message too large, expired in queue and a few more, else `Other`). It is a keyword match on the response text and DSN code where the first matching rule wins, so it is a guide for dashboards, not an exact classification. The rules are in the `postfix_reason_category` script processor.
 - `postfix.queued_as` holds the next hop's queue ID (`queued as ...` in an smtp/lmtp reply, or `forwarded as ...` from local), for following a message through content filters, relays and `.forward` files.
 - The OpenDMARC and policyd-spf (Python version) patterns are written from their usual log formats and haven't been checked against a wide range of real logs. Check `_grok_opendmarc_nomatch` and `_grok_policyd_spf_nomatch` after rollout.
 - `postfix_elastic_pipeline.json` uses Kibana Console triple-quote string syntax. It must be pasted directly into Kibana Dev Tools; it is **not** a standalone JSON file that can be loaded by the Elasticsearch REST API or other tooling without first converting the triple-quoted strings to standard JSON escaped strings.

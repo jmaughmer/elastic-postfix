@@ -17,6 +17,7 @@
         "postfix": {
           "properties": {
             "action": { "type": "keyword" },
+            "activity": { "type": "keyword" },
             "anvil_cache_size": { "type": "long" },
             "anvil_conn_count": { "type": "long" },
             "anvil_conn_period": { "type": "keyword" },
@@ -114,6 +115,8 @@
             "queued_as": { "type": "keyword" },
             "ratelimit_type": { "type": "keyword" },
             "ratelimit_value": { "type": "long" },
+            "reason": { "type": "keyword" },
+            "reason_category": { "type": "keyword" },
             "relay_service": { "type": "keyword" },
             "resent-message-id": { "type": "keyword" },
             "sasl_method": { "type": "keyword" },
