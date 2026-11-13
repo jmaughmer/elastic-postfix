@@ -508,6 +508,54 @@ What to check in the response:
 - The `Relay access denied` reject has `postfix.reason_category: Relay denied`, and the `zen.spamhaus.org` reject has `Blocklisted or poor reputation`.
 - The `event.timezone: America/New_York` document has `@timestamp` `…T10:00:00.000-04:00`, and the `Dec 31` line is dated the previous year.
 
+`tools/test_pipeline.py` runs these checks, and more, for you (see below).
+
+## Checking changes
+
+The `tools/` directory has three scripts for checking a change before you commit or install it. They use only the Python standard library (3.8 or later). Each takes `--es` (or `$ES_URL`, default `http://localhost:9200`), and `--api-key`, or `--user` and `--password`, for a secured cluster; `--help` lists the rest. On Windows, run them with `python`; elsewhere `python3` may be the name.
+
+### Pipeline: `tools/test_pipeline.py`
+
+```bash
+python tools/test_pipeline.py --es http://localhost:9200
+```
+
+Sends `postfix_elastic_pipeline.json` and the sample messages from the `_simulate` example above to `POST _ingest/pipeline/_simulate`, and checks the parsed fields: everything listed under "What to check in the response", the activity and failure-reason fields, timestamps, TLS, SASL and the milters. The pipeline goes in the request body, so nothing is installed or indexed and it is safe to run against any cluster, including production. It exits non-zero when a check fails and prints the field, the value it got and the value it expected.
+
+When you change the pipeline, add a sample line to the README's `_simulate` example and a check for it to `CHECKS` in the script. `-v` prints every parsed document.
+
+### Dashboards: `tools/test_dashboards.py`
+
+```bash
+python tools/test_dashboards.py --es http://localhost:9200 --kibana http://localhost:5601
+```
+
+Generates about a day of synthetic Postfix, OpenDKIM, OpenDMARC and policyd-spf logs, parses them with the pipeline through `_simulate`, and indexes them into the data stream `logs-postfix-dashboardtest`, with the mappings from the component template. It then runs every panel's and control's ES|QL query in all four dashboards with several control settings. It fails when a query errors, a panel's column is missing from its result, a panel has no rows with every control at `All`, or one of the Postfix dashboard's headline counts (delivered, deferred, bounced, rejected, messages queued, matching messages) differs from the count taken straight from the generated lines. With `--kibana` it also imports the four dashboards, so you can look at them against the synthetic data.
+
+Use a throwaway cluster. The script refuses to run when the cluster has other `logs-postfix-*` data streams, because the dashboards read `logs-postfix-*` and the synthetic mail would show up next to real mail (`--force` overrides this, and then skips the headline counts). `--cleanup` deletes the test data stream and its index template at the end. Remote-cluster patterns in the all-clusters and EXAMPLE dashboards are dropped from `FROM` for the test, so those two dashboards are checked against the local cluster only. Exchange data isn't generated, so the mail flow dashboards' Exchange side and the "messages seen by more than one system" panel aren't exercised.
+
+A throwaway Elasticsearch and Kibana with security off, with Docker or Podman (swap the version to test another one):
+
+```bash
+docker network create es-test
+docker run -d --name es-test --net es-test -p 9200:9200 -e discovery.type=single-node -e xpack.security.enabled=false -e ES_JAVA_OPTS="-Xms2g -Xmx2g" docker.elastic.co/elasticsearch/elasticsearch:9.5.4
+docker run -d --name kb-test --net es-test -p 5601:5601 -e ELASTICSEARCH_HOSTS=http://es-test:9200 docker.elastic.co/kibana/kibana:9.5.4
+```
+
+Remove them afterwards with `docker rm -f es-test kb-test` and `docker network rm es-test`.
+
+### Readable dashboard diffs: `tools/ndjson_diff.py`
+
+Kibana exports a dashboard as one line of JSON with its panels and controls packed into JSON strings, so `git diff` shows any change to a dashboard as one changed line. `tools/ndjson_diff.py FILE` prints the export as indented JSON with sorted keys, the packed strings unpacked, and each ES|QL query split into one entry per pipe command. Nothing is left out, so every change shows up.
+
+`.gitattributes` assigns the NDJSON files a `kibana-ndjson` diff driver. Turn it on once per clone, and `git diff`, `git log -p` and `git show` use the readable form for those files:
+
+```bash
+git config diff.kibana-ndjson.textconv "python tools/ndjson_diff.py"
+```
+
+It only changes how diffs are displayed; the files themselves stay in Kibana's format. GitHub and other tools that don't read your git config still show the raw line.
+
 ## Notes
 
 - The pipeline preserves raw input in `event.original`.
@@ -526,5 +574,5 @@ What to check in the response:
 - `postfix.reason_category` groups `postfix.reason` into common causes (unknown recipient, mailbox full, greylisted, rate limited, blocklisted, relay denied, spam or content policy, sender authentication, connection timed out/refused/lost, DNS failure, TLS failure, message too large, expired in queue and a few more, else `Other`). It is a keyword match on the response text and DSN code where the first matching rule wins, so it is a guide for dashboards, not an exact classification. The rules are in the `postfix_reason_category` script processor.
 - `postfix.queued_as` holds the next hop's queue ID (`queued as ...` in an smtp/lmtp reply, or `forwarded as ...` from local), for following a message through content filters, relays and `.forward` files.
 - The OpenDMARC and policyd-spf (Python version) patterns are written from their usual log formats and haven't been checked against a wide range of real logs. Check `_grok_opendmarc_nomatch` and `_grok_policyd_spf_nomatch` after rollout.
-- `postfix_elastic_pipeline.json` uses Kibana Console triple-quote string syntax. It must be pasted directly into Kibana Dev Tools; it is **not** a standalone JSON file that can be loaded by the Elasticsearch REST API or other tooling without first converting the triple-quoted strings to standard JSON escaped strings.
+- `postfix_elastic_pipeline.json` uses Kibana Console triple-quote string syntax. It must be pasted directly into Kibana Dev Tools; it is **not** a standalone JSON file that can be loaded by the Elasticsearch REST API or other tooling without first converting the triple-quoted strings to standard JSON escaped strings. `load_pipeline()` in `tools/common.py` does that conversion if you need it in a script.
 - `postfix_component_template.json` is standard JSON and can be applied with any Elasticsearch client in addition to Kibana Dev Tools. Apply it before indexing so explicit mappings are used rather than dynamic field inference.

@@ -1,0 +1,3 @@
+# Show Kibana NDJSON exports as indented JSON in git diff, log -p and show.
+# Needs once per clone: git config diff.kibana-ndjson.textconv "python tools/ndjson_diff.py"
+*.ndjson diff=kibana-ndjson
