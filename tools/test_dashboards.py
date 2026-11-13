@@ -10,7 +10,8 @@ Meant for a throwaway cluster (see "Checking changes" in README.md). It:
    _simulate, and indexes the result, so the pipeline isn't installed;
 3. runs each panel's and each control's query with several control settings, and fails on a query error, a
    column the panel expects but the query doesn't return, or (with every control at All) a panel with no rows;
-   it also compares the Postfix dashboard's headline counts with counts taken straight from the generated lines;
+   it also compares the headline counts (Postfix tiles, mail flow messages and volume) with counts taken straight
+   from the generated lines;
 4. with --kibana, imports the four dashboards so you can look at them.
 
 It refuses to run when the cluster has other logs-postfix-* data streams, because the dashboards read
@@ -163,19 +164,37 @@ def index_data(es, now):
 
 
 def expected_counts(lines):
-    """Headline numbers of the Postfix dashboard, counted from the raw lines rather than through the pipeline."""
+    """Headline numbers per dashboard file, counted from the raw lines rather than through the pipeline."""
     msgs = [(l["host"]["name"], l["message"]) for l in lines]
-    queued = {(h, re.search(r": ([0-9A-F]{10}): from=", m).group(1)) for h, m in msgs if "(queue active)" in m}
+    # one entry per message, although a retried message logs "queue active" again
+    sizes = {}
+    for h, m in msgs:
+        q = re.search(r": ([0-9A-F]{10}): from=<[^>]*>, size=(\d+)", m)
+        if q and "(queue active)" in m:
+            sizes[(h, q.group(1))] = int(q.group(2))
     rejects = sum(1 for _, m in msgs if "NOQUEUE: reject:" in m)
-    return {
+    mb = sum(sizes.values()) / 1048576.0
+    postfix = {
         "kpi-sent": sum(1 for _, m in msgs if "status=sent" in m),
         "kpi-deferred": sum(1 for _, m in msgs if "status=deferred" in m),
         "kpi-bounced": sum(1 for _, m in msgs if "status=bounced" in m or "status=expired" in m),
         "kpi-rejected": rejects,
-        # one per message, although a retried message logs "queue active" again
-        "kpi-messages-queued": len(queued),
-        "kpi-matching-messages": len(queued) + rejects,
+        "kpi-messages-queued": len(sizes),
+        "kpi-total-volume": round(mb, 1),
+        "kpi-matching-messages": len(sizes) + rejects,
     }
+    mail_flow = {"kpi-messages": len(sizes), "kpi-volume": round(mb, 1)}
+    return {"postfix_kibana_dashboard.ndjson": postfix,
+            "mail_flow_kibana_dashboard.ndjson": mail_flow,
+            "mail_flow_all_clusters_kibana_dashboard.ndjson": mail_flow,
+            "mail_flow_example_cluster_kibana_dashboard.ndjson": mail_flow}
+
+
+def same(got, want):
+    """Exact for counts; for MB rounded to 0.1, allow for the two sides rounding a .x5 differently."""
+    if isinstance(want, float) and isinstance(got, (int, float)):
+        return abs(got - want) <= 0.1001
+    return got == want
 
 
 def local_only(query):
@@ -236,7 +255,7 @@ def check_dashboard(es, path, now, verbose, expected=None):
             first_rows = results[0][2]
             if expected and name in expected:
                 got = first_rows[0][0] if first_rows and first_rows[0] else None
-                if got != expected[name]:
+                if not same(got, expected[name]):
                     failures.append("%s: %s with every control at All, expected %s" % (name, got, expected[name]))
             empty = not first_rows or all(v is None for row in first_rows for v in row)
             if empty and name not in EXPECTED_EMPTY:
@@ -276,7 +295,7 @@ def main():
     for name in DASHBOARD_FILES:
         print(name)
         count, fails = check_dashboard(es, os.path.join(REPO, name), now, args.verbose,
-                                       expected if name == "postfix_kibana_dashboard.ndjson" else None)
+                                       expected and expected.get(name))
         checked += count
         failures += ["%s: %s" % (name, f) for f in fails]
 
