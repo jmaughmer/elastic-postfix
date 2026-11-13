@@ -15,7 +15,8 @@ Meant for a throwaway cluster (see "Checking changes" in README.md). It:
 4. runs each panel's and each control's query with several control settings, and fails on a query error, a
    column the panel expects but the query doesn't return, or (with every control at All) a panel with no rows;
    it also compares the headline counts (Postfix tiles; mail flow messages, volume, delivered, not delivered and
-   messages seen by more than one system) with counts taken straight from the generated data;
+   messages seen by more than one system; Exchange failures by reason and status) with counts taken straight from the
+   generated data;
 5. with --kibana, imports the four dashboards so you can look at them.
 
 It refuses to run when the cluster has other Postfix or Exchange data streams, because the dashboards read

@@ -30,7 +30,31 @@ SUBJECTS = ["Quarterly report", "Re: Meeting tomorrow", "Invoice 2026-114", "You
 # Graph message trace status values and how often they occur
 EOL_STATUSES = [("delivered", 80), ("failed", 5), ("filteredAsSpam", 5), ("quarantined", 3), ("pending", 3), ("expanded", 2), ("gettingStatus", 2)]
 EOL_FAILED = {"failed", "quarantined", "filteredasspam"}
+# what the Exchange Online failure panels show: the failed statuses plus messages still pending
+EOL_NOT_DELIVERED = EOL_FAILED | {"pending"}
 SCHEMA = "15.02.1544.004"
+# recipient status of failed and deferred deliveries, and the category the mail flow dashboards should put each in;
+# SMTP ones are wrapped in {LED=...} around the remote server's response
+ROUTING_FAIL = [("550 5.1.1 RESOLVER.ADR.RecipNotFound; not found", "Unknown or disabled recipient"),
+                ("554 5.2.2 mailbox full; STOREDRV.Deliver.Exception:QuotaExceededException.MapiExceptionShutoffQuotaExceeded", "Mailbox full"),
+                ("550 5.2.3 RESOLVER.RST.RecipSizeLimit; message too large for this recipient", "Message too large")]
+SMTP_DEFER = [('451 4.4.0 Primary target IP address responded with: "421 4.4.2 Connection dropped." Attempted failover to alternate host, '
+               'but that did not succeed.', "Connection lost or unreachable"),
+              ('451 4.4.397 Error encountered while communicating with primary target IP address: "Failed to connect, Winsock error code: '
+               '10060, Win32 error code: 10060." Attempted failover to alternate host, but that did not succeed.', "Connection timed out"),
+              ("450 4.7.1 Greylisted, please try again in 5 minutes", "Greylisted"),
+              ("451 4.7.0 Temporary server error. Please try again later. PRX4", "Temporary failure (other)")]
+SMTP_FAIL = [("550 5.4.316 Message expired, connection timeout(SocketError)", "Expired in queue"),
+             ("550 5.7.1 Service unavailable, Client host [192.0.2.30] blocked using Spamhaus. To request removal from this list see "
+              "https://www.spamhaus.org/query/ip/192.0.2.30", "Blocklisted or poor reputation"),
+             ("554 5.4.4 SMTPSEND.DNS.NonExistentDomain; nonexistent domain", "DNS or host lookup failure"),
+             ("550 5.7.509 Access denied, sending domain corp.example does not pass DMARC verification and has a DMARC policy of reject",
+              "Sender authentication (SPF, DKIM, DMARC)")]
+FAILURE_CATEGORY = dict(ROUTING_FAIL + SMTP_DEFER + SMTP_FAIL)
+
+
+def _led(response, fqdn, ip):
+    return "[{LRT=};{LED=%s};{FQDN=%s};{IP=%s}]" % (response, fqdn, ip)
 
 
 def _iso(t):
@@ -56,7 +80,7 @@ def eol_row(t, sender, recipient, subject, size, message_id, trace_id, status, f
     doc["email"] = {"from": {"address": [sender]}, "to": {"address": [recipient]}, "subject": subject, "local_id": trace_id,
                     "message_id": message_id, "delivery_timestamp": _iso(t), "attachments": {"file": {"size": size}},
                     "direction": "inbound" if recipient.endswith("@" + TENANT_DOMAIN) and not sender.endswith("@" + TENANT_DOMAIN)
-                    else "outbound" if not recipient.endswith("@" + TENANT_DOMAIN) else "intra-org"}
+                    else "outbound" if not recipient.endswith("@" + TENANT_DOMAIN) else "internal"}
     doc["source"] = {"ip": from_ip, "user": {"email": sender, "id": sender, "name": sender.split("@")[0], "domain": sender.split("@")[1]},
                      "domain": sender.split("@")[1]}
     doc["destination"] = {"user": {"email": recipient, "id": recipient, "name": recipient.split("@")[0], "domain": recipient.split("@")[1]},
@@ -77,7 +101,7 @@ def exs_event(t, server, eventid, source, sender, recipients, subject, size, mes
               ";".join(recipients), status, str(size), str(len(recipients)), "", "", subject, sender, sender, "", direction, "", "", "",
               "S:DeliveryPriority=Normal", "Email", str(uuid.UUID(int=random.getrandbits(128))), SCHEMA]
     doc["@timestamp"] = _iso(t)
-    doc["message"] = ",".join('"%s"' % f if "," in f else f for f in fields)
+    doc["message"] = ",".join('"%s"' % f.replace('"', '""') if "," in f or '"' in f else f for f in fields)
     doc["event"]["original"] = doc["message"]
     doc["client"] = {"ip": client_ip, "domain": client_name}
     doc["server"] = {"ip": ip, "domain": fqdn}
@@ -181,18 +205,20 @@ def native(now, rnd, messages=600):
                 tk = t + dt.timedelta(seconds=1 + k * 0.3)
                 if r.endswith("@" + ONPREM_DOMAIN):
                     if rnd.random() < 0.06:
-                        ev(tk, "FAIL", "ROUTING", [r], "", "550 5.1.1 RESOLVER.ADR.RecipNotFound; not found")
+                        ev(tk, "FAIL", "ROUTING", [r], "", rnd.choice(ROUTING_FAIL)[0])
                         ev(tk + dt.timedelta(milliseconds=500), "DSN", "DSN", [frm], "", "", "", "Originating")
                     else:
                         ev(tk, "DELIVER", "STOREDRIVER", [r], "", "250 2.1.5 Recipient OK", "MDB:Mailbox Database 01")
                 else:
                     x = rnd.random()
+                    mx = "mx.%s" % r.split("@")[1]
+                    mx_ip = "203.0.113.%d" % rnd.randint(1, 250)
                     if x < 0.08:
-                        ev(tk, "DEFER", "SMTP", [r], "Outbound to Internet", "451 4.4.0 Primary target IP address responded with: \"421 4.4.2 Connection dropped.\"")
+                        ev(tk, "DEFER", "SMTP", [r], "Outbound to Internet", _led(rnd.choice(SMTP_DEFER)[0], mx, mx_ip))
                         if rnd.random() < 0.5:
                             ev(tk + dt.timedelta(minutes=15), "SEND", "SMTP", [r], "Outbound to Internet", "250 2.0.0 OK")
                     elif x < 0.13:
-                        ev(tk, "FAIL", "SMTP", [r], "Outbound to Internet", "550 5.4.316 Message expired, connection timeout(SocketError)")
+                        ev(tk, "FAIL", "SMTP", [r], "Outbound to Internet", _led(rnd.choice(SMTP_FAIL)[0], mx, mx_ip))
                         ev(tk + dt.timedelta(milliseconds=500), "DSN", "DSN", [frm])
                     else:
                         ev(tk, "SEND", "SMTP", [r], "Outbound to Internet", "250 2.0.0 OK")
@@ -260,7 +286,50 @@ def expected_mail_flow(postfix_lines, eol, exs):
         "kpi-delivered": pf_delivered + sum(1 for s in status if s == "delivered") + sum(1 for e in events if e in ("DELIVER", "SEND")),
         "kpi-not-delivered": pf_failed + sum(1 for s in status if s in EOL_FAILED) + sum(1 for e in events if e == "FAIL"),
         "cross-system-messages": cross_system_check(sum(1 for v in ids.values() if len(v) > 1)),
+        "exchange-server-failure-categories": category_check(exs),
+        "exchange-server-failure-responses": response_check,
+        "exchange-online-not-delivered": total_check("recipients", sum(1 for s in status if s in EOL_NOT_DELIVERED)),
+        "exchange-online-not-delivered-messages": row_count_check(min(100, sum(1 for s in status if s in EOL_NOT_DELIVERED))),
     }
+
+
+def total_check(column, want):
+    """The panel's rows add up to want in column."""
+    def check(names, rows):
+        got = sum(r[names.index(column)] or 0 for r in rows)
+        return got == want, "%s add up to %d, expected %d" % (column, got, want)
+    return check
+
+
+def category_check(exs):
+    """Failed and deferred Exchange Server deliveries per reason category, as FAILURE_CATEGORY files each generated text."""
+    want = {}
+    for d in exs:
+        x = d["microsoft"]["exchange"]
+        if x["eventid"] in ("FAIL", "DEFER"):
+            cat = next(c for text, c in FAILURE_CATEGORY.items() if text in x["recipientstatus"])
+            want[cat] = want.get(cat, 0) + 1
+
+    def check(names, rows):
+        got = {}
+        for r in rows:
+            cat = r[names.index("category")]
+            got[cat] = got.get(cat, 0) + r[names.index("events")]
+        wrong = sorted(c for c in set(got) | set(want) if got.get(c) != want.get(c))
+        return not wrong, "; ".join("%s: %s, expected %s" % (c, got.get(c, 0), want.get(c, 0)) for c in wrong)
+    return check
+
+
+def response_check(names, rows):
+    """Each response has its status code parsed out, and SMTP responses are unwrapped from {LED=...}."""
+    bad = [r[names.index("response")] for r in rows if r[names.index("dsn")] is None or "{LED=" in (r[names.index("response")] or "")]
+    return not bad, "%d of %d rows without a status code or still wrapped in {LED=...}, e.g. %s" % (len(bad), len(rows), bad[:1])
+
+
+def row_count_check(want):
+    def check(names, rows):
+        return (len(rows) == want, "%d rows, expected %d" % (len(rows), want))
+    return check
 
 
 def cross_system_check(matches):

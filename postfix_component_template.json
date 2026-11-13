@@ -268,9 +268,17 @@
         "server": { "properties": { "domain": { "type": "keyword" } } },
         "microsoft": {
           "properties": {
-            "exchange": { "properties": { "eventid": { "type": "keyword" } } },
+            "exchange": {
+              "properties": {
+                "eventid": { "type": "keyword" },
+                "recipientstatus": { "type": "keyword" },
+                "source": { "type": "keyword" }
+              }
+            },
             "online_message_trace": {
               "properties": {
+                "FromIP": { "type": "keyword" },
+                "ToIP": { "type": "keyword" },
                 "Size": { "type": "long" },
                 "Status": { "type": "keyword" }
               }
