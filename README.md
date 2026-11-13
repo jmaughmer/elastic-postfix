@@ -530,9 +530,24 @@ When you change the pipeline, add a sample line to the README's `_simulate` exam
 python tools/test_dashboards.py --es http://localhost:9200 --kibana http://localhost:5601
 ```
 
-Generates about a day of synthetic Postfix, OpenDKIM, OpenDMARC and policyd-spf logs, parses them with the pipeline through `_simulate`, and indexes them into the data stream `logs-postfix-dashboardtest`, with the mappings from the component template. It then runs every panel's and control's ES|QL query in all four dashboards with several control settings. It fails when a query errors, a panel's column is missing from its result, a panel has no rows with every control at `All`, or a headline count differs from the count taken straight from the generated lines: in the Postfix dashboard delivered, deferred, bounced, rejected, messages queued, data queued and matching messages; in the mail flow dashboards messages and data volume. With `--kibana` it also imports the four dashboards, so you can look at them against the synthetic data.
+Generates about a day of synthetic mail and indexes it into three test data streams:
 
-Use a throwaway cluster. The script refuses to run when the cluster has other `logs-postfix-*` data streams, because the dashboards read `logs-postfix-*` and the synthetic mail would show up next to real mail (`--force` overrides this, and then skips the headline counts). `--cleanup` deletes the test data stream and its index template at the end. Remote-cluster patterns in the all-clusters and EXAMPLE dashboards are dropped from `FROM` for the test, so those two dashboards are checked against the local cluster only. Exchange data isn't generated, so the mail flow dashboards' Exchange side and the "messages seen by more than one system" panel aren't exercised.
+- `logs-postfix-dashboardtest`: Postfix, OpenDKIM, OpenDMARC and policyd-spf log lines, parsed with the pipeline through `_simulate`, with the mappings from the component template.
+- `logs-microsoft_exchange_online_message_trace.log-dashboardtest`: Exchange Online message trace rows, one per recipient, with every status the Graph message trace API returns (`delivered`, `failed`, `pending`, `filteredAsSpam`, `quarantined`, `expanded`, `gettingStatus`).
+- `logs-microsoft_exchange_server.messagetracking-dashboardtest`: Exchange Server message tracking events: `RECEIVE`, `SUBMIT`, `DELIVER`, `SEND`, `DEFER`, `FAIL` and `DSN` across two servers.
+
+The Exchange documents have the shape that Elastic's Microsoft Exchange Online Message Trace (2.4) and Microsoft Exchange Server (1.6) integrations produce after their ingest pipelines; `tools/exchange_data.py` generates them, and the integrations themselves aren't installed. Their index templates use the stack's `ecs@mappings` for ECS fields and the integrations' own types for the `microsoft.*` fields, as a Fleet install does, so `email.message_id` is `wildcard` there and `keyword` on the Postfix indices, as in production. Postfix deliveries to `corp.example` also appear as a `RECEIVE` and `DELIVER` on an Exchange server, and deliveries to `outlook.example` as Exchange Online rows, with the same Message-ID, so the "messages seen by more than one system" panel has matches.
+
+It then runs every panel's and control's ES|QL query in all four dashboards with several control settings. It fails when a query errors, a panel's column is missing from its result, a panel has no rows with every control at `All`, or a headline count differs from the count taken straight from the generated data:
+
+- Postfix dashboard: delivered, deferred, bounced, rejected, messages queued, data queued and matching messages.
+- Mail flow dashboards: messages, data volume, recipient deliveries, and failed, rejected or filtered, across all three systems. The "messages seen by more than one system" panel must list the expected number of messages, each including Postfix.
+
+With `--kibana` it also imports the four dashboards, so you can look at them against the synthetic data.
+
+Use a throwaway cluster. The script refuses to run when the cluster has other Postfix or Exchange data streams (`logs-postfix-*`, `logs-microsoft_exchange_online_message_trace.log-*`, `logs-microsoft_exchange_server.messagetracking-*`), because the dashboards read those patterns and the synthetic mail would show up next to real mail (`--force` overrides this, and then skips the headline counts). `--cleanup` deletes the three test data streams and their index templates at the end. Remote-cluster patterns in the all-clusters and EXAMPLE dashboards are dropped from `FROM` for the test, so those two dashboards are checked against the local cluster only.
+
+If you switch a test Kibana to another version on the same port, reload the browser tab with its cache cleared. A front end cached from the old version gets "Browser client is out of date" errors from the new Kibana, and the dashboards show stale or failed panels.
 
 A throwaway Elasticsearch and Kibana with security off, with Docker or Podman (swap the version to test another one):
 

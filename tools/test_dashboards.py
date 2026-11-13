@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Index a day of synthetic Postfix logs and run every ES|QL query in the four dashboards against them.
+"""Index a day of synthetic Postfix and Exchange logs and run every ES|QL query in the four dashboards against them.
 
 Meant for a throwaway cluster (see "Checking changes" in README.md). It:
 
@@ -8,14 +8,18 @@ Meant for a throwaway cluster (see "Checking changes" in README.md). It:
 2. generates about 9,000 log lines for the last 24 hours (deliveries, deferrals, bounces, expiries, rejects,
    TLS, SASL, OpenDKIM, OpenDMARC and policyd-spf), parses them with postfix_elastic_pipeline.json through
    _simulate, and indexes the result, so the pipeline isn't installed;
-3. runs each panel's and each control's query with several control settings, and fails on a query error, a
+3. generates Exchange Online message trace rows and Exchange Server message tracking events in the shape
+   Elastic's integrations index them (see exchange_data.py), including Exchange's view of Postfix mail handed on to
+   it, and indexes them into logs-microsoft_exchange_online_message_trace.log-dashboardtest and
+   logs-microsoft_exchange_server.messagetracking-dashboardtest;
+4. runs each panel's and each control's query with several control settings, and fails on a query error, a
    column the panel expects but the query doesn't return, or (with every control at All) a panel with no rows;
-   it also compares the headline counts (Postfix tiles, mail flow messages and volume) with counts taken straight
-   from the generated lines;
-4. with --kibana, imports the four dashboards so you can look at them.
+   it also compares the headline counts (Postfix tiles; mail flow messages, volume, delivered, not delivered and
+   messages seen by more than one system) with counts taken straight from the generated data;
+5. with --kibana, imports the four dashboards so you can look at them.
 
-It refuses to run when the cluster has other logs-postfix-* data streams, because the dashboards read
-logs-postfix-* and the synthetic data would show up next to real mail. --force overrides that.
+It refuses to run when the cluster has other Postfix or Exchange data streams, because the dashboards read
+those patterns and the synthetic data would show up next to real mail. --force overrides that.
 
     python tools/test_dashboards.py --es http://localhost:9200 --kibana http://localhost:5601
 
@@ -28,14 +32,16 @@ import random
 import re
 import sys
 
+import exchange_data
 from common import (DASHBOARD_FILES, REPO, Client, add_es_args, es_client, load_component_template, load_pipeline,
                     parser, simulate)
 
 STREAM = "logs-postfix-dashboardtest"
+TEST_STREAMS = [STREAM, exchange_data.EOL_STREAM, exchange_data.EXS_STREAM]
+# data streams whose real data would mix with the synthetic data in the dashboards
+WATCHED = ["logs-postfix-*", "logs-microsoft_exchange_online_message_trace.log-*", "logs-microsoft_exchange_server.messagetracking-*"]
 # panels that have no rows in the synthetic data, and why
-EXPECTED_EMPTY = {
-    "cross-system-messages": "needs Exchange data",
-}
+EXPECTED_EMPTY = {}
 
 SENDERS = ["alice@example.org", "bob@example.org", "newsletter@example.org", "billing@example.org", "carol@example.net", "noreply@shop.example"]
 DOMAINS = ["gmail.example", "outlook.example", "corp.example", "partner.example", "slowmx.example"]
@@ -160,10 +166,19 @@ def index_data(es, now):
             body.append(json.dumps(doc))
     r = es.request("POST", "/%s/_bulk?refresh=true&pipeline=_none" % STREAM, "\n".join(body) + "\n", content_type="application/x-ndjson")
     errors = [i["create"]["error"] for i in r["items"] if "error" in i["create"]]
-    return lines, bad, errors
+
+    eol, exs = exchange_data.generate(now, lines)
+    for stream, template in exchange_data.index_templates().items():
+        es.request("PUT", "/_index_template/" + stream, template)
+        es.request("DELETE", "/_data_stream/" + stream, allow_404=True)
+    for stream, docs in ((exchange_data.EOL_STREAM, eol), (exchange_data.EXS_STREAM, exs)):
+        body = "".join('{"create":{}}\n' + json.dumps(d) + "\n" for d in docs)
+        r = es.request("POST", "/%s/_bulk?refresh=true&pipeline=_none" % stream, body, content_type="application/x-ndjson")
+        errors += [i["create"]["error"] for i in r["items"] if "error" in i["create"]]
+    return lines, eol, exs, bad, errors
 
 
-def expected_counts(lines):
+def expected_counts(lines, eol, exs):
     """Headline numbers per dashboard file, counted from the raw lines rather than through the pipeline."""
     msgs = [(l["host"]["name"], l["message"]) for l in lines]
     # one entry per message, although a retried message logs "queue active" again
@@ -183,7 +198,7 @@ def expected_counts(lines):
         "kpi-total-volume": round(mb, 1),
         "kpi-matching-messages": len(sizes) + rejects,
     }
-    mail_flow = {"kpi-messages": len(sizes), "kpi-volume": round(mb, 1)}
+    mail_flow = exchange_data.expected_mail_flow(lines, eol, exs)
     return {"postfix_kibana_dashboard.ndjson": postfix,
             "mail_flow_kibana_dashboard.ndjson": mail_flow,
             "mail_flow_all_clusters_kibana_dashboard.ndjson": mail_flow,
@@ -254,9 +269,15 @@ def check_dashboard(es, path, now, verbose, expected=None):
                     failures.append("%s: columns %s missing from the result %s" % (name, missing, names))
             first_rows = results[0][2]
             if expected and name in expected:
-                got = first_rows[0][0] if first_rows and first_rows[0] else None
-                if not same(got, expected[name]):
-                    failures.append("%s: %s with every control at All, expected %s" % (name, got, expected[name]))
+                want = expected[name]
+                if callable(want):
+                    ok, why = want(results[0][1], first_rows)
+                    if not ok:
+                        failures.append("%s: %s" % (name, why))
+                else:
+                    got = first_rows[0][0] if first_rows and first_rows[0] else None
+                    if not same(got, want):
+                        failures.append("%s: %s with every control at All, expected %s" % (name, got, want))
             empty = not first_rows or all(v is None for row in first_rows for v in row)
             if empty and name not in EXPECTED_EMPTY:
                 failures.append("%s: no rows with every control at All" % name)
@@ -269,27 +290,26 @@ def main():
     p = parser(__doc__)
     add_es_args(p)
     p.add_argument("--kibana", help="Kibana URL; when set, import the dashboards there (same credentials as --es)")
-    p.add_argument("--force", action="store_true", help="run even if the cluster has other logs-postfix-* data streams")
-    p.add_argument("--cleanup", action="store_true", help="delete the test data stream and index template at the end")
+    p.add_argument("--force", action="store_true", help="run even if the cluster has other Postfix or Exchange data streams")
+    p.add_argument("--cleanup", action="store_true", help="delete the test data streams and index templates at the end")
     p.add_argument("-v", "--verbose", action="store_true", help="print each query's row count")
     args = p.parse_args()
     es = es_client(args)
 
-    streams = es.request("GET", "/_data_stream/logs-postfix-*")["data_streams"]
-    others = [s["name"] for s in streams if s["name"] != STREAM]
+    streams = es.request("GET", "/_data_stream/" + ",".join(WATCHED))["data_streams"]
+    others = [s["name"] for s in streams if s["name"] not in TEST_STREAMS]
     if others and not args.force:
-        print("This cluster has other Postfix data streams (%s). The synthetic data would appear in their dashboards.\n"
+        print("This cluster has other Postfix or Exchange data streams (%s). The synthetic data would appear in their dashboards.\n"
               "Use a throwaway cluster, or pass --force." % ", ".join(others))
         return 2
 
     now = dt.datetime.now(dt.timezone.utc)
-    lines, bad, errors = index_data(es, now)
-    total = len(lines)
-    # with other Postfix data in the cluster the headline numbers include it, so only compare them without
-    expected = None if others else expected_counts(lines)
+    lines, eol, exs, bad, errors = index_data(es, now)
+    # with other Postfix or Exchange data in the cluster the headline numbers include it, so only compare them without
+    expected = None if others else expected_counts(lines, eol, exs)
     failures = ["synthetic line not fully parsed: %s -> %s" % b for b in bad[:20]]
     failures += ["bulk error: %s" % e for e in errors[:5]]
-    print("indexed %d synthetic lines into %s" % (total, STREAM))
+    print("indexed %d Postfix lines, %d Exchange Online rows and %d Exchange Server events" % (len(lines), len(eol), len(exs)))
 
     checked = 0
     for name in DASHBOARD_FILES:
@@ -309,9 +329,10 @@ def main():
         print("imported %d dashboards into %s" % (len(DASHBOARD_FILES), args.kibana))
 
     if args.cleanup:
-        es.request("DELETE", "/_data_stream/" + STREAM, allow_404=True)
-        es.request("DELETE", "/_index_template/" + STREAM, allow_404=True)
-        print("deleted %s" % STREAM)
+        for stream in TEST_STREAMS:
+            es.request("DELETE", "/_data_stream/" + stream, allow_404=True)
+            es.request("DELETE", "/_index_template/" + stream, allow_404=True)
+        print("deleted %s" % ", ".join(TEST_STREAMS))
 
     for f in failures:
         print("FAIL " + f)
