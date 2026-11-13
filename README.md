@@ -44,37 +44,51 @@ Then ship to a data stream such as `logs-postfix-default`. This replaces the bui
 
 ## Install Dashboard
 
-`postfix_kibana_dashboard.ndjson` is a dashboard ("Postfix Mail Overview") for Kibana 8.19 and later, built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and hourly trends, a breakdown per activity (sent, deferred, bounced, expired, rejected), why mail was deferred, bounced or rejected, messages by size and outcome, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, message sizes (total volume, average and largest message, volume over time, size ranges, and sender domains by volume), top sender and recipient addresses by message count and data volume, relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse.
+`postfix_kibana_dashboard.ndjson` is a dashboard ("Postfix Mail Overview") for Kibana 8.19 and later, built from ES|QL panels over `logs-postfix-*`: delivery and rejection KPIs and trends over time, a breakdown per activity (sent, deferred, bounced, expired, rejected), why mail was deferred, bounced or rejected, messages by size and outcome, top rejection reasons and rejected clients, DNSBL hits, SASL failures, TLS versions, top domains, message sizes (total volume, average and largest message, volume over time, size ranges, and sender domains by volume), top sender and recipient addresses by message count and data volume, relay delays, warnings by daemon, DKIM/DMARC/SPF results, and messages the pipeline couldn't fully parse.
 
-Controls at the top filter every panel by sending user (`email.from.address`), receiving user (`email.to.address`) or host (`host.name`, set by the shipper).
+Import it in Kibana under **Stack Management → Saved Objects → Import**, choosing the NDJSON file. It also creates a `logs-postfix-*` data view (id `logs-postfix`) that the host control uses. Re-importing with "Automatically overwrite conflicts" replaces both.
 
-Import it in Kibana under **Stack Management → Saved Objects → Import**, choosing the NDJSON file. It also creates a `logs-postfix-*` data view (id `logs-postfix`) that the controls use. Re-importing with "Automatically overwrite conflicts" replaces both.
+The new panels and the Activity control read `postfix.activity`, `postfix.reason` and `postfix.reason_category`, so install the current pipeline and component template first. A component template only applies to backing indices created after it, so roll the data stream over (`POST logs-postfix-default/_rollover`) or wait for the first new line to arrive; until one of those happens the panels fail with "Unknown column [postfix.activity]". Lines indexed before the new pipeline have no activity and don't appear in the activity sections.
 
-Each Postfix log line carries only some fields, so the controls narrow panels to the lines that contain the selected value. A sending-user filter keeps queue (`from=`) lines and rejects, so delivery counts drop to zero; a receiving-user filter keeps delivery and reject lines, so size panels drop to zero.
+### Filters
 
-### Activity and size filters
+Six controls sit at the top:
 
-Three more controls filter by what happened to the mail and by how big it was. They need the current pipeline and component template (`postfix.activity`, `postfix.reason` and `postfix.reason_category`), so install those first; lines indexed before that have no activity and don't appear in these panels.
-
+- **Sender** and **Recipient**: one address, or `All`. Each list holds the 1,000 most frequent addresses in the dashboard's time range (`email.from.address`, `email.to.address`).
+- **Host**: `host.name`, set by the shipper. Every panel follows it.
 - **Activity**: `All`, `Not delivered` (everything except sent), or one of `sent`, `deferred`, `bounced`, `expired`, `rejected`, `discarded`, `held`. It reads `postfix.activity`.
 - **Min size (KB)** and **Max size (KB, 0 = any)**: a size range in KB from `postfix.size`. `0` means no limit on that side.
 
-These are ES|QL variable controls (`?activity`, `?min_size_kb`, `?max_size_kb`), not data-view controls, so they pick one value at a time and only change the panels whose query uses them:
+All but Host are ES|QL variable controls (`?sender`, `?recipient`, `?activity`, `?min_size_kb`, `?max_size_kb`), not data-view controls. They pick one value at a time and only change the panels whose query uses them:
 
-| Section | Activity | Size | Counts |
-| --- | --- | --- | --- |
-| Mail activity | yes | no | log lines: one per delivery attempt or reject |
-| Why mail was not delivered | yes | no | log lines |
-| Messages by size and activity | yes | yes | messages: lines joined on host and queue ID |
-| Message size panels further down (messages queued, data queued, size ranges, top senders and recipients by volume) | no | yes | queue lines |
+| Panels | Sender | Recipient | Activity | Size | Counts |
+| --- | --- | --- | --- | --- | --- |
+| Four tiles at the top (delivered, deferred, bounced, rejected) | yes | yes | no | yes | log lines, joined to their message |
+| Mail activity | no | yes | yes | no | log lines: one per delivery attempt or reject |
+| Why mail was not delivered | no | yes | yes | no | log lines |
+| Messages by size and activity | yes | yes | yes | yes | messages: lines joined on host and queue ID |
+| Reject panels (rejections over time, top rejection reasons, rejected senders and clients, DNSBL) | yes | yes | no | no | log lines |
+| Message size panels (messages queued, data queued, size ranges, sender domains, top senders) | yes | no | no | yes | messages |
+| Top recipients by messages and by volume | yes | yes | no | yes | messages |
+| Top recipient domains, delay by relay | no | yes | no | no | log lines |
 
-To add a size step, edit the control and add a number to its list; the queries take any number. The four KPI tiles at the top and the panels not listed here ignore these three controls.
+The panels not listed (SASL, TLS, warnings, DKIM, DMARC, SPF, parse health) follow only Host and the time range.
 
-Size is logged on the queue line (`from=`, `size=`) and the outcome on the delivery lines (`to=`, `status=`), so only the *Messages by size and activity* section can apply both filters at once. There, a message matches an activity when any of its recipients had it, and its *outcome* is the worst result seen: bounced, expired, rejected, discarded or held, then sent, then deferred. A message queued before the dashboard's time range has no size in range, so it drops out when a size limit is set. Rejects that never got a queue ID count as one message each with no size. These panels group every line in the time range by queue ID, so they are the slowest on the dashboard; shorten the time range if they lag. The sending-user and receiving-user controls keep only the lines with that address, which breaks this join, so use them with the other sections.
+Why Sender doesn't reach every panel: Postfix logs the sender and size on the queue line (`from=`, `size=`) and each outcome on a delivery line (`to=`, `status=`), tied together only by the queue ID. A filter on the sender therefore has to be applied after joining a message's lines. The tiles and the *Messages by size and activity* section do that join; the line-level sections don't, because joining every line for every panel would make the whole dashboard slow. To see what happened to one sender's mail and why, select the sender and read *Messages by size and activity*: it has the outcome counts, the reasons, and the list of messages with recipients, DSN codes and responses. Reject lines carry both addresses themselves, so reject panels follow both controls directly.
+
+In *Messages by size and activity*, a message matches an activity when any of its recipients had it (or the selected recipient, when one is selected), and its *outcome* is the worst result seen: bounced, expired, rejected, discarded or held, then sent, then deferred. A message queued before the dashboard's time range has no size or sender in range, so it drops out when a size limit or a sender is set. Rejects that never got a queue ID count as one message each with no size. These panels and the tiles group every line in the time range by queue ID, so they are the slowest on the dashboard; shorten the time range if they lag.
+
+Things to know about the controls:
+
+- To add a size step, edit the control and add a number to its list; the queries take any number.
+- An address outside the 1,000 most frequent isn't in the Sender or Recipient list. Raise the `LIMIT` in the control's query, or narrow the time range.
+- The message size panels count each message once. A deferred message logs a new `queue active` line on every retry, and those repeats are folded together on host and queue ID.
+- Postfix reuses short queue IDs, so over a long time range two messages on one host can share an ID and be joined as one. Setting `enable_long_queue_ids = yes` in Postfix avoids that.
+- Charts over time size their buckets to the time range (about 40 buckets), so a one-hour view shows minutes and a 30-day view shows most of a day per bar.
 
 ### Activity panels
 
-*Mail activity* breaks the flow down per activity: hourly counts, a summary table (lines, messages, recipients, average, median, 95th percentile and maximum delay, and where the delay was spent: before the queue manager, in the queue, connection setup, transmission), 95th percentile delay over time, attempts by delay range, and the top recipient domains, relays, recipients and rejected senders with a count per activity.
+*Mail activity* breaks the flow down per activity: counts over time, a summary table (lines, messages, recipients, average, median, 95th percentile and maximum delay, and where the delay was spent: before the queue manager, in the queue, connection setup, transmission), 95th percentile delay over time, attempts by delay range, and the top recipient domains, relays, recipients and rejected senders with a count per activity.
 
 *Why mail was not delivered* covers deferred, bounced, expired, rejected, discarded and held mail:
 
@@ -84,20 +98,21 @@ Size is logged on the queue line (`from=`, `size=`) and the outcome on the deliv
 - the most common response texts, with addresses in angle brackets masked so the same response groups together
 - the 100 newest lines with host, queue ID, sender (rejects only), recipient, relay, DSN, SMTP code, the SMTP command being answered, delay, category and the full response
 
-*Messages by size and activity* shows how many messages match and their volume, size statistics and size ranges by outcome, the top senders with a count per outcome, and the 100 newest matching messages with size, recipients, activities, DSN codes and responses.
+*Messages by size and activity* shows how many messages match and their volume, message counts and size statistics by outcome, size ranges by outcome, the reasons matching messages were not delivered, the top senders with a count per outcome, and the 100 newest matching messages with size, recipients, activities, DSN codes and responses.
 
 ## Install Combined Mail Flow Dashboard
 
-`mail_flow_kibana_dashboard.ndjson` is a second dashboard ("Mail Flow Overview (Postfix + Exchange)", Kibana 8.19+) that combines this data stream with Elastic's [Microsoft Exchange Online Message Trace](https://www.elastic.co/docs/reference/integrations/microsoft_exchange_online_message_trace) and [Microsoft Exchange Server](https://www.elastic.co/docs/reference/integrations/microsoft_exchange_server) (message tracking) integrations. It shows totals and hourly trends by system, delivery outcomes by system, top senders and recipients across systems, messages seen by more than one system (matched on Message-ID), a searchable list of the latest message events, events by host, and data volume by system.
+`mail_flow_kibana_dashboard.ndjson` is a second dashboard ("Mail Flow Overview (Postfix + Exchange)", Kibana 8.19+) that combines this data stream with Elastic's [Microsoft Exchange Online Message Trace](https://www.elastic.co/docs/reference/integrations/microsoft_exchange_online_message_trace) and [Microsoft Exchange Server](https://www.elastic.co/docs/reference/integrations/microsoft_exchange_server) (message tracking) integrations. It shows totals and trends over time by system, delivery outcomes by system, why Postfix mail was not delivered (reason categories and the most common responses), top senders and recipients across systems, messages seen by more than one system (matched on Message-ID), a searchable list of the latest message events with the Postfix DSN code and response, events by host, and data volume by system.
 
 Controls at the top filter every panel by sender (`email.from.address`), recipient (`email.to.address`), host (`host.name`), queue or local ID (`email.local_id`), Message-ID (`email.message_id`) or subject (`email.subject`). The ID and subject controls search anywhere in the value, so part of an ID or subject is enough. Import it the same way, under **Stack Management → Saved Objects → Import**. It also creates a `mail-flow-logs` data view over all three sources for the controls.
 
-Install the current component template first. It maps the few Exchange fields the dashboard queries (`microsoft.exchange.eventid`, `microsoft.online_message_trace.Size`/`Status`, `network.bytes`, `server.domain`, `email.subject`) on the Postfix indices too, so the ES|QL panels don't fail with "Unknown column" when one of the Exchange integrations isn't installed.
+Install the current component template first. It maps the few Exchange fields the dashboard queries (`microsoft.exchange.eventid`, `microsoft.online_message_trace.Size`/`Status`, `network.bytes`, `server.domain`, `email.subject`) on the Postfix indices too, so the ES|QL panels don't fail with "Unknown column" when one of the Exchange integrations isn't installed. The dashboard also reads `postfix.activity`, `postfix.reason` and `postfix.reason_category`; as with the Postfix dashboard, roll the data stream over after installing the template if those columns are reported unknown.
 
 How the sources are lined up:
 
 - **Messages and data volume** count one event per message: the Postfix `queue active` line (`postfix.size`), the Exchange Server `RECEIVE` event (`network.bytes`), and each Exchange Online trace row (`Size`). Exchange Online returns one row per recipient, and a message received by several Exchange servers has a `RECEIVE` on each, so those systems can count a message more than once.
-- **Outcomes** map Postfix `status=sent/deferred/bounced/expired` and rejects, Exchange Online `Delivered/Pending/Failed/FilteredAsSpam/Quarantined`, and Exchange Server `DELIVER`/`SEND`/`DEFER`/`FAIL` onto delivered, deferred, failed and rejected/filtered.
+- **Outcomes** map Postfix `postfix.activity` (sent, deferred, bounced/expired, and rejected/discarded/held), Exchange Online `Delivered/Pending/Failed/FilteredAsSpam/Quarantined`, and Exchange Server `DELIVER`/`SEND`/`DEFER`/`FAIL` onto delivered, deferred, failed and rejected/filtered. Postfix lines indexed before `postfix.activity` existed fall back to `postfix.status` and the reject actions, so older data still counts.
+- **Failure reasons** come from Postfix only (`postfix.reason_category`, `postfix.reason`, `postfix.dsn`), so the two "Postfix:" panels need lines parsed by the current pipeline. The Exchange integrations' reason fields aren't mapped on the Postfix indices, so they aren't shown.
 - **Hosts** use `host.name`, falling back to the Exchange Server `server.domain`. Exchange Online events have no host, so the host control filters them out.
 - **IDs and subjects** aren't the same across systems. `email.local_id` is the Postfix queue ID, the Exchange Online `MessageTraceId`, or the Exchange Server local ID, so it finds one system's view of a message. Postfix stores the Message-ID without angle brackets and Exchange Online keeps them, so the Message-ID control lists both forms; search for part of the ID to find both. Postfix logs no subject, so the subject control filters out Postfix events.
 
